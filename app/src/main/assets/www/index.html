@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AetherDesk Mobile</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  
+  <style>
+    /* Critical FOUC preventer: ensures splash is opaque immediately */
+    #boot-splash-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #f8fafc; /* default light mode background */
+      z-index: 100000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      will-change: opacity;
+    }
+    .splash-logo-container {
+      width: 100%;
+      max-width: 320px;
+      text-align: center;
+      box-sizing: border-box;
+      padding: 0 20px;
+    }
+    /* Smooth entrance animations for splash elements */
+    @keyframes splash-fade-in {
+      from {
+        opacity: 0;
+        transform: translate3d(0, 12px, 0) scale(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+    }
+    .splash-logo-container > * {
+      opacity: 0;
+      animation: splash-fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      will-change: transform, opacity;
+    }
+    #splash-logo {
+      animation-delay: 0.05s;
+    }
+    .splash-title {
+      animation-delay: 0.15s;
+    }
+    .splash-subtitle {
+      animation-delay: 0.25s;
+    }
+    .splash-loading-container {
+      animation-delay: 0.35s;
+    }
+    html.dark-theme #boot-splash-overlay,
+    body.dark-theme #boot-splash-overlay {
+      background: #050807 !important;
+    }
+    /* Hide layout during boot splash to prevent FOUC bleed-through */
+    body.booting > *:not(#boot-splash-overlay):not(#onboarding-overlay) {
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+  </style>
+
+  <script>
+    // Execute theme check instantly to prevent light flashes
+    const savedTheme = localStorage.getItem("theme") || "light";
+    if (savedTheme === "dark") {
+      document.documentElement.classList.add("dark-theme");
+      document.addEventListener("DOMContentLoaded", () => {
+        document.body.classList.add("dark-theme");
+      });
+    }
+    // Set status bar theme as early as possible
+    if (window.AndroidBridge && window.AndroidBridge.setStatusBarTheme) {
+      window.AndroidBridge.setStatusBarTheme(savedTheme);
+    } else {
+      document.addEventListener("DOMContentLoaded", () => {
+        if (window.AndroidBridge && window.AndroidBridge.setStatusBarTheme) {
+          window.AndroidBridge.setStatusBarTheme(savedTheme);
+        }
+      });
+    }
+
+    // Force viewport height to prevent collapse in Android WebView
+    function adjustViewportHeight() {
+      const height = window.innerHeight + "px";
+      document.documentElement.style.setProperty('height', height, 'important');
+      if (document.body) {
+        document.body.style.setProperty('height', height, 'important');
+      }
+    }
+    window.addEventListener("resize", adjustViewportHeight);
+    document.addEventListener("DOMContentLoaded", adjustViewportHeight);
+    adjustViewportHeight();
+  </script>
+</head>
+<body class="booting">
+
+  <!-- Floating Liquid Background Glow Blobs -->
+  <div class="bg-glow-container">
+    <div class="bg-blob blob-emerald"></div>
+    <div class="bg-blob blob-gold"></div>
+    <div class="bg-blob blob-rose"></div>
+  </div>
+
+  <!-- Fullscreen Boot Splash Overlay -->
+  <div id="boot-splash-overlay">
+    <div class="splash-logo-container" style="text-align: center;">
+      <img id="splash-logo" class="app-logo-theme" src="images/logo_transparent.png" alt="AetherDesk Logo" style="width: 80px; height: 80px; object-fit: contain; margin-bottom: 20px; filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.35));">
+      <h1 class="splash-title" style="font-family: 'Outfit', sans-serif; font-size: 2.2rem; font-weight: 800; background: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-gold) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 1.5px; margin: 0;">AetherDesk</h1>
+      <p class="splash-subtitle" style="font-size: 0.85rem; color: var(--accent-emerald); font-weight: 700; letter-spacing: 1px; margin-top: 6px; text-transform: uppercase;">OFFLINE AI WORKSPACE</p>
+      
+      <div class="splash-loading-container" style="margin-top: 40px; display: flex; flex-direction: column; align-items: center; gap: 12px; width: 220px; margin-left: auto; margin-right: auto;">
+        <div style="width: 100%; height: 3px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; position: relative;">
+          <div id="splash-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-emerald) 0%, var(--accent-gold) 100%); border-radius: 2px; transition: width 0.25s linear; will-change: width; box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);"></div>
+        </div>
+        <span id="splash-loading-text" style="font-size: 0.8rem; color: var(--text-secondary); font-weight: 500; min-height: 1.2em; transition: opacity 0.2s ease;">Initializing core modules...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen Onboarding Overlay -->
+  <div id="onboarding-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #050807; z-index: 99999; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box; padding: 20px; overflow-y: auto;">
+    <div class="glass-panel" style="width: 100%; max-width: 380px; padding: 24px; border-radius: 16px; box-shadow: 0 16px 48px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 20px; box-sizing: border-box;">
+      
+      <!-- Slide 1: Survey -->
+      <div id="onboarding-slide-survey" style="display: flex; flex-direction: column; gap: 16px;">
+        <div style="text-align: center;">
+          <img class="app-logo-theme" src="images/logo_transparent.png" alt="AetherDesk Logo" style="width: 50px; height: 50px; object-fit: contain; margin-bottom: 10px; filter: drop-shadow(0 0 8px var(--accent-emerald));">
+          <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; font-weight: 800; background: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-gold) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;">Feature Setup</h2>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">Choose which modules to optimize on this device</p>
+        </div>
+        
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- Card 1 -->
+          <label class="glass-panel" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; cursor: pointer; border: 1.5px solid var(--panel-border); background: rgba(255,255,255,0.01); transition: all 0.2s ease;">
+            <input type="checkbox" id="feature-pdf-ocr" checked style="accent-color: var(--accent-emerald); width: 18px; height: 18px;">
+            <div style="display: flex; flex-direction: column;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary);">PDF Tools & OCR Notes</span>
+              <span style="font-size: 0.7rem; color: var(--text-muted);">Local compression, merging, and offline ML Kit text scanner.</span>
+            </div>
+          </label>
+          
+          <!-- Card 2 -->
+          <label class="glass-panel" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; cursor: pointer; border: 1.5px solid var(--panel-border); background: rgba(255,255,255,0.01); transition: all 0.2s ease;">
+            <input type="checkbox" id="feature-math" checked style="accent-color: var(--accent-emerald); width: 18px; height: 18px;">
+            <div style="display: flex; flex-direction: column;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary);">Offline Math Solver</span>
+              <span style="font-size: 0.7rem; color: var(--text-muted);">Solve linear & quadratic formulas locally with KaTeX rendering.</span>
+            </div>
+          </label>
+          
+          <!-- Card 3 -->
+          <label class="glass-panel" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; cursor: pointer; border: 1.5px solid var(--panel-border); background: rgba(255,255,255,0.01); transition: all 0.2s ease;">
+            <input type="checkbox" id="feature-study" checked style="accent-color: var(--accent-emerald); width: 18px; height: 18px;">
+            <div style="display: flex; flex-direction: column;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary);">Study & Productivity Planner</span>
+              <span style="font-size: 0.7rem; color: var(--text-muted);">Zen focus timer, study task calendar, and HSL color creator.</span>
+            </div>
+          </label>
+
+          <!-- Card 4 -->
+          <label class="glass-panel" style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; cursor: pointer; border: 1.5px solid var(--panel-border); background: rgba(255,255,255,0.01); transition: all 0.2s ease;">
+            <input type="checkbox" id="feature-ai-chat" style="accent-color: var(--accent-emerald); width: 18px; height: 18px;">
+            <div style="display: flex; flex-direction: column;">
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary);">On-Device AI Chat Agent</span>
+              <span style="font-size: 0.7rem; color: var(--text-muted);">WebGPU-powered local LLM Chat (requires model download).</span>
+            </div>
+          </label>
+        </div>
+
+        <button class="btn-neon btn-neon-emerald" style="width: 100%; min-height: 44px; font-weight: 700; font-size: 0.9rem; margin-top: 8px;" onclick="goToOnboardingModels()">Next</button>
+      </div>
+
+      <!-- Slide 2: Model Downloader -->
+      <div id="onboarding-slide-models" style="display: none; flex-direction: column; gap: 16px;">
+        <div style="text-align: center;">
+          <h2 style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; font-weight: 800; background: linear-gradient(135deg, var(--accent-emerald) 0%, var(--accent-gold) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0;">AI Model Setup</h2>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">Download recommended model weights for offline AI chat</p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;" id="onboarding-models-list"></div>
+
+        <!-- Download Progress Area -->
+        <div id="onboarding-download-progress-container" style="display: none; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-secondary);">
+            <span id="onboarding-download-model-name">Downloading model...</span>
+            <span id="onboarding-download-percent">0%</span>
+          </div>
+          <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; position: relative;">
+            <div id="onboarding-download-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-emerald) 0%, var(--accent-gold) 100%); border-radius: 3px; transition: width 0.1s linear;"></div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+          <button class="btn-secondary" style="flex: 1; min-height: 44px; font-size: 0.8rem;" onclick="finishOnboarding(true)">Skip</button>
+          <button class="btn-neon btn-neon-emerald" id="onboarding-finish-btn" style="flex: 1; min-height: 44px; font-weight: 700; font-size: 0.9rem;" onclick="finishOnboarding(false)">Finish Setup</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- App Header -->
+  <header class="app-header">
+  <button id="backBtn" class="header-back-btn hidden" onclick="goBack()" aria-label="Back" style="display: none;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;"><polyline points="15 18 9 12 15 6"/></svg></button>
+  <div class="header-title-section" style="flex:1; display:flex; align-items:center; gap:8px;">
+    <!-- Branding logo removed per user request -->
+    
+    <div class="header-text">
+      <h1 class="header-title">AetherDesk</h1>
+      <p class="header-subtitle">OFFLINE AI WORKSPACE</p>
+    </div>
+  </div>
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <div class="header-network-badge" id="network-badge" onclick="checkWifiSetup()">
+      <span class="badge-dot" id="network-dot"></span>
+      <span class="badge-text" id="network-label">Detecting...</span>
+    </div>
+    <div style="position: relative;">
+      <button id="notif-toggle-btn" class="header-settings-btn" style="position: relative; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;" onclick="toggleNotificationDropdown()" aria-label="Notifications">
+        <svg style="width: 18px; height: 18px; stroke: currentColor; fill: none;" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        <span id="notif-badge" style="display: none; position: absolute; top: 0px; right: 0px; width: 8px; height: 8px; background: var(--accent-cyan); border-radius: 50%; box-shadow: 0 0 6px var(--accent-cyan);"></span>
+      </button>
+      <div id="notification-dropdown" class="glass-panel" style="display: none; position: absolute; top: 40px; right: -40px; width: 280px; max-height: 350px; z-index: 9999; padding: 12px; flex-direction: column; gap: 10px; border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,0.6); border: 1px solid var(--panel-border); background: var(--notif-bg); backdrop-filter: blur(16px);">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px;">
+          <span style="font-weight: 700; font-size: 0.85rem; color: var(--accent-purple);">Notifications</span>
+          <button class="btn-secondary" style="font-size: 0.7rem; padding: 2px 6px; min-height: 24px;" onclick="clearAllNotifications()">Clear All</button>
+        </div>
+        <div id="notif-list-container" style="overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 8px; max-height: 260px;">
+          <p id="notif-empty-state" style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 15px;">No new alerts.</p>
+        </div>
+      </div>
+    </div>
+    <button class="header-settings-btn" onclick="showSettingsPopup()" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px;">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15.4 4.6a1.65 1.65 0 0 0 .33-1.82l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </div>
+</header>
+  <!-- Edit Overlay for Scanner -->
+  <div id="editOverlay" class="edit-overlay hidden" style="position: fixed; top:0; left:0; right:0; bottom:0; background: var(--bg-primary); z-index: 200; display:none; flex-direction:column; align-items:center; justify-content:center; padding:20px;">
+    <canvas id="editCanvas" style="max-width:90%; max-height:70%; border:1px solid var(--panel-border); background:#fff;"></canvas>
+    <div style="margin-top:12px; display:flex; gap:8px;">
+      <button class="btn-neon btn-neon-emerald" onclick="applyEdit()">Save</button>
+      <button class="btn-secondary" onclick="closeEditOverlay()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="app-container">
+    <!-- Toast Container for sliding notifications -->
+    <div id="toast-notification-container" style="position: fixed; top: 60px; left: 16px; right: 16px; z-index: 10000; display: flex; flex-direction: column; gap: 8px; pointer-events: none;"></div>
+
+    <!-- Tab 1: Dashboard -->
+    <section id="tab-dashboard" class="tab-content active">
+      <div class="welcome-banner">
+        <h2>Midnight Sanctuary</h2>
+        <p>Your local, high-performance study and development companion.</p>
+      </div>
+
+      <div class="glass-panel card clickable-card" onclick="switchTab('performance')" style="cursor: pointer;">
+        <div class="card-header">
+          <svg class="card-icon icon-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+            <line x1="6" y1="6" x2="6.01" y2="6"/>
+            <line x1="6" y1="18" x2="6.01" y2="18"/>
+          </svg>
+          <h3>Device Health & Resources</h3>
+        </div>
+        <div class="device-stats-grid">
+          <div class="stat-item">
+            <span class="stat-label">CPU LOAD</span>
+            <span class="stat-value text-emerald" id="spec-cpu-val">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">RAM USED</span>
+            <span class="stat-value text-gold" id="spec-ram-val">--</span>
+            <span class="stat-sub" id="spec-ram-sub">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">STORAGE</span>
+            <span class="stat-value text-emerald" id="spec-storage-val">--</span>
+            <span class="stat-sub" id="spec-storage-sub">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">SWAP FILES</span>
+            <span class="stat-value text-gold" id="spec-vram-val">--</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-panel card">
+        <div class="card-header">
+          <svg class="card-icon icon-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <h3>Calendar & Tasks</h3>
+        </div>
+        <div id="dashboard-tasks" class="flex-col" style="gap: 10px;">
+          <p class="text-muted" style="font-size:0.85rem;">No upcoming tasks. Add one below!</p>
+        </div>
+        <div class="chat-input-row" style="margin-top: 12px;">
+          <input type="text" id="new-task-title" class="input-glass" placeholder="Add study task...">
+          <button class="btn-neon btn-neon-emerald" onclick="addDashboardTask()">Add</button>
+        </div>
+      </div>
+
+      <!-- Widget 1: Zen Focus Companion -->
+      <div class="glass-panel card widget-card" id="widget-zen-focus" style="margin-top: 16px;">
+        <div class="card-header">
+          <svg class="card-icon icon-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <h3>Zen Focus Companion</h3>
+        </div>
+        <div class="widget-focus-layout" style="display: flex; align-items: center; justify-content: space-around; gap: 16px; padding: 6px 0;">
+          <!-- Circular Timer Visualization -->
+          <div class="timer-display-container" style="position: relative; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center;">
+            <svg class="timer-ring-svg" viewBox="0 0 100 100" style="transform: rotate(-90deg); width: 100%; height: 100%;">
+              <circle class="timer-ring-bg" cx="50" cy="50" r="42" style="fill: none; stroke: var(--panel-border); stroke-width: 6;"/>
+              <circle class="timer-ring-bar" id="timer-progress-ring" cx="50" cy="50" r="42" style="fill: none; stroke: var(--accent-emerald); stroke-width: 6; stroke-dasharray: 263.89; stroke-dashoffset: 0; transition: stroke-dashoffset 0.3s ease;"/>
+            </svg>
+            <div class="timer-text-overlay" style="position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+              <span id="timer-time-val" style="font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 700;">25:00</span>
+              <span id="timer-status-val" style="font-size: 0.5rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">FOCUS</span>
+            </div>
+          </div>
+          <div class="timer-controls-row" style="display: flex; flex-direction: column; gap: 8px; flex: 1; max-width: 140px;">
+            <button class="btn-neon btn-neon-emerald" style="min-height: 34px; padding: 6px 12px; font-size: 0.75rem; width: 100%;" id="timer-start-btn" onclick="toggleFocusTimer()">Start</button>
+            <button class="btn-secondary" style="min-height: 34px; padding: 6px 12px; font-size: 0.75rem; width: 100%;" onclick="resetFocusTimer()">Reset</button>
+          </div>
+        </div>
+        
+        <div class="widget-ambient-layout" style="border-top: 1px solid var(--panel-border); padding-top: 10px;">
+          <span class="widget-section-title" style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Ambient Synthesizer</span>
+          <div class="embedded-chip-tabs ambient-chips" id="ambient-noise-tabs" style="padding-bottom: 4px;">
+            <button class="chip-tab" onclick="toggleAmbientSound('brown', this)">Cosmic Brown</button>
+            <button class="chip-tab" onclick="toggleAmbientSound('rain', this)">Zen Rain</button>
+            <button class="chip-tab" onclick="toggleAmbientSound('waves', this)">Binaural Waves</button>
+          </div>
+          <div class="ambient-volume-row" style="display: none; align-items: center; gap: 8px; margin-top: 8px;" id="ambient-volume-container">
+            <svg style="width: 14px; height: 14px; color: var(--text-muted); flex-shrink: 0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <input type="range" id="ambient-volume-slider" min="0" max="100" value="50" class="slider-glass" style="flex: 1;" oninput="updateAmbientVolume(this.value)">
+          </div>
+        </div>
+      </div>
+
+      <!-- Widget 2: AetherShare Local QuickShare -->
+      <div class="glass-panel card widget-card" id="widget-aether-share" style="margin-top: 16px;">
+        <div class="card-header">
+          <svg class="card-icon icon-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+            <polyline points="16 6 12 2 8 6"/>
+            <line x1="12" y1="2" x2="12" y2="15"/>
+          </svg>
+          <h3>AetherShare P2P</h3>
+        </div>
+        
+        <div id="share-unpaired-state" class="flex-col" style="gap: 12px; padding: 4px 0;">
+          <p class="text-muted" style="font-size:0.75rem;">Share files offline between desktop and mobile devices via secure local QR sessions.</p>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-neon btn-neon-emerald" style="flex: 1; min-height: 38px; font-size: 0.8rem;" onclick="openAetherSharePairingModal()">Pair Device</button>
+          </div>
+        </div>
+
+        <div id="share-paired-state" class="flex-col" style="gap: 12px; padding: 4px 0; display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(16, 185, 129, 0.08); padding: 8px; border-radius: 6px; border: 1px solid var(--panel-border);">
+            <div style="display: flex; flex-direction: column;">
+              <span id="share-paired-device-name" style="font-size: 0.8rem; font-weight: 700; color: var(--accent-emerald);">AetherPC-Desktop</span>
+              <span id="share-session-expiry-countdown" style="font-size: 0.65rem; color: var(--text-muted);">Session expires in: --</span>
+            </div>
+            <button class="btn-secondary btn-small" onclick="unpairAetherShareDevice()">Unpair</button>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-direction: column;">
+            <!-- File Sender picker -->
+            <div class="file-picker-btn" onclick="browseFileForShare()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px; color: var(--accent-emerald);">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+              <span id="share-file-label" style="font-size: 0.75rem;">Select file to send</span>
+            </div>
+            <button class="btn-neon btn-neon-emerald" id="share-send-btn" style="width: 100%; min-height: 38px; font-size: 0.8rem; display: none;" onclick="simulateShareFileTransfer()">Send File Offline</button>
+          </div>
+
+          <!-- Transfer Progress -->
+          <div id="share-transfer-progress-container" style="display: none; flex-direction: column; gap: 6px; border-top: 1px solid var(--panel-border); padding-top: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-secondary);">
+              <span id="share-transfer-status-text">Sending file...</span>
+              <span id="share-transfer-percent">0%</span>
+            </div>
+            <div style="width: 100%; height: 6px; background: var(--subtab-bg); border-radius: 3px; overflow: hidden;">
+              <div id="share-transfer-progress-bar" style="width: 0%; height: 100%; background: var(--accent-emerald); border-radius: 3px; transition: width 0.1s linear;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: Productivity Tools -->
+    <section id="tab-productivity" class="tab-content">
+      <div class="glass-panel card">
+        <div class="card-header">
+          <h3>Productivity File Tools</h3>
+        </div>
+        
+        <!-- Embedded Horizontal Tab Selector -->
+        <div class="embedded-chip-tabs" id="productivity-chip-tabs">
+          <button class="chip-tab active" onclick="setProductivityTool('compress')">PDF Compressor</button>
+          <button class="chip-tab" onclick="setProductivityTool('scanner')">Aether Scanner</button>
+          <button class="chip-tab" onclick="setProductivityTool('convert')">PDF ↔ Word</button>
+          <button class="chip-tab" onclick="setProductivityTool('raster')">PDF → Images</button>
+          <button class="chip-tab" onclick="setProductivityTool('crypto')">AES Encryptor</button>
+          <button class="chip-tab" onclick="setProductivityTool('recover')">Password Recovery</button>
+        </div>
+
+        <!-- Thumbnail Strip for captured images -->
+    <div id="thumbnailStrip" class="thumbnail-strip hidden" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; justify-content:center;">
+      <!-- thumbnails will be injected here -->
+    </div>
+    <!-- Sub-Utility 1: PDF Compressor -->
+        <div id="util-pane-compress" class="util-sub-pane">
+          <div class="flex-col" style="gap: 12px;">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Reduce PDF size via smart quality downscaling.</p>
+            <div class="file-picker-btn" onclick="browseFileForUtil('compress')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px; color: var(--accent-emerald);">
+                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span id="compress-file-label">Tap to select PDF file</span>
+            </div>
+            <input type="hidden" id="compress-input-path">
+            
+            <div id="compress-slider-box" style="display: none;">
+              <div style="display:flex; justify-content:space-between; font-size:0.75rem; margin-bottom: 4px;">
+                <span>Target output size:</span>
+                <span id="compress-target-size-lbl" style="font-weight:700; color:var(--accent-emerald);">0.0 MB</span>
+              </div>
+              <input type="range" id="compress-size-slider" min="10" max="10240" value="1024" class="slider-glass" style="width:100%;" oninput="updateTargetSizeLabelMobile()">
+              <div style="display:flex; justify-content:space-between; font-size:0.65rem; color:var(--text-muted); margin-top:2px;">
+                <span>10 KB</span>
+                <span id="compress-original-size-lbl">Original: 0.0 MB</span>
+              </div>
+            </div>
+
+            <div>
+              <span style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:6px;">Compression Quality:</span>
+              <div class="segmented-control" id="compress-quality-control">
+                <button class="segment-btn active" onclick="setSegmentValue('compress-quality-mobile', 'balanced', this)">Balanced</button>
+                <button class="segment-btn" onclick="setSegmentValue('compress-quality-mobile', 'high', this)">High Quality</button>
+                <button class="segment-btn" onclick="setSegmentValue('compress-quality-mobile', 'small', this)">Small Size</button>
+              </div>
+              <input type="hidden" id="compress-quality-mobile" value="balanced">
+            </div>
+            
+            <div style="display:flex; gap:6px; align-items:center;">
+              <input type="checkbox" id="compress-lossless" style="width:14px; height:14px; accent-color:var(--accent-emerald);">
+              <label for="compress-lossless" style="font-size:0.75rem; color:var(--text-secondary);">Lossless optimization only</label>
+            </div>
+
+            <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="runPdfCompression()">Compress Document</button>
+            <p id="compress-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500; text-align: center;"></p>
+          </div>
+        </div>
+
+        <!-- Sub-Utility: Aether Document Scanner -->
+        <div id="util-pane-scanner" class="util-sub-pane" style="display: none;">
+          <div class="flex-col" style="gap: 12px;">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Simulate a high-fidelity batch scanner with AI Edge alignment and OCR indexing.</p>
+            
+            <!-- Clickable camera launch card -->
+            <div onclick="openAetherScanner()" class="scanner-card-clickable" style="padding: 28px 24px; border-radius: 16px; background: var(--card-bg-inner); border: 2px dashed var(--accent-emerald); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 48px; height: 48px; color: var(--accent-emerald); filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span style="font-size: 0.95rem; color: var(--text-primary); font-weight: 700; letter-spacing: -0.2px;">Launch Camera Scanner</span>
+              <span style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.45;">Tap here to open the real-time camera viewfinder HUD and scan pages.</span>
+            </div>
+
+            <!-- Divider separator -->
+            <div style="display: flex; align-items: center; gap: 10px; margin: 4px 0;">
+              <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.06);"></div>
+              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 700;">OR</span>
+              <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.06);"></div>
+            </div>
+
+            <!-- Select Images from Gallery Option -->
+            <div class="file-picker-btn" onclick="browseFileForUtil('combine')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px; color: var(--accent-emerald); margin-right: 6px;">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <span id="combine-file-label">Select Images from Gallery</span>
+            </div>
+            <input type="hidden" id="img-input-paths">
+            
+            <div id="combine-controls-box" style="display: none; flex-direction: column; gap: 10px;">
+              <div>
+                <span style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">Output PDF Name:</span>
+                <input type="text" id="img-output-name" class="input-glass" style="font-size:0.8rem; padding:8px 10px;" value="scanned_batch.pdf">
+              </div>
+              <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="convertImagesToPdf()">Compile Selected Images</button>
+            </div>
+            
+            <p id="scanner-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500; text-align: center; margin: 0;"></p>
+            <p id="img-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500; text-align: center; margin: 0;"></p>
+          </div>
+        </div>
+
+        <!-- Sub-Utility 3: PDF ↔ Word -->
+        <div id="util-pane-convert" class="util-sub-pane" style="display: none;">
+          <div class="flex-col" style="gap: 12px;">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Convert documents locally between DOCX and PDF.</p>
+            <div class="file-picker-btn" onclick="browseFileForUtil('convert')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px; color: var(--accent-emerald);">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span id="convert-file-label">Select .pdf or .docx file</span>
+            </div>
+            <input type="hidden" id="conv-input-path">
+
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-neon btn-neon-emerald" style="flex: 1; font-size: 0.75rem;" onclick="convertPdfToWord()">PDF → Word</button>
+              <button class="btn-secondary" style="flex: 1; font-size: 0.75rem;" onclick="convertWordToPdf()">Word → PDF</button>
+            </div>
+            <p id="conv-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500; text-align: center;"></p>
+          </div>
+        </div>
+
+        <!-- Sub-Utility 4: PDF → Images -->
+        <div id="util-pane-raster" class="util-sub-pane" style="display: none;">
+          <div class="flex-col" style="gap: 12px;">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Rasterize PDF pages into standalone image files.</p>
+            <div class="file-picker-btn" onclick="browseFileForUtil('raster')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px; color: var(--accent-emerald);">
+                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+                <path d="M12 12v9"/>
+                <polyline points="8 17 12 21 16 17"/>
+              </svg>
+              <span id="raster-file-label">Tap to select PDF file</span>
+            </div>
+            <input type="hidden" id="rast-input-path">
+
+            <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="rasterizePdf()">Extract Pages as Images</button>
+            <p id="rast-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500; text-align: center;"></p>
+          </div>
+        </div>
+
+        <!-- Sub-Utility 5: AES Encryptor -->
+        <div id="util-pane-crypto" class="util-sub-pane" style="display: none;">
+          <div class="flex-col" style="gap: 12px;">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Securely encrypt/decrypt files locally with AES-256 or PDF standard.</p>
+            <div class="file-picker-btn" onclick="browseFileForUtil('crypto')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px; color: var(--accent-emerald);">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+              <span id="crypto-file-label">Tap to select any file</span>
+            </div>
+            <input type="hidden" id="crypto-input-path">
+            
+            <!-- PDF Protection Warn Banner -->
+            <div id="encrypt-protection-warning" style="display:none; padding:8px 10px; border-radius:6px; background:rgba(217, 119, 6, 0.1); border:1px solid rgba(217, 119, 6, 0.3); font-size:0.75rem; color:var(--accent-gold);">
+              File is protected! Click Autofill in Password Recovery.
+            </div>
+
+            <div>
+              <span style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">Password Key:</span>
+              <input type="password" id="encrypt-password" class="input-glass" style="font-size:0.8rem; padding:8px 10px;" placeholder="Enter crypto password..." oninput="onEncryptPasswordInputMobile()">
+              <div style="margin-top: 4px;">
+                <div style="display:flex; justify-content:space-between; font-size:0.65rem;">
+                  <span>Strength: <strong id="encrypt-strength-label">None</strong></span>
+                  <span id="encrypt-crack-time" style="color:var(--text-muted);">Crack: -</span>
+                </div>
+                <div class="strength-bar-bg">
+                  <div id="encrypt-strength-bar" class="strength-bar"></div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <span style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:6px;">Protection Mode:</span>
+              <div class="segmented-control" id="encrypt-type-control">
+                <button class="segment-btn active" onclick="setSegmentValue('encrypt-type', 'aes', this)">AES-256 Lock</button>
+                <button class="segment-btn" onclick="setSegmentValue('encrypt-type', 'pdf_standard', this)">PDF Password</button>
+              </div>
+              <input type="hidden" id="encrypt-type" value="aes">
+            </div>
+
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-neon btn-neon-emerald" style="flex: 1; font-size: 0.75rem;" onclick="runEncryptFile()">Encrypt</button>
+              <button class="btn-secondary" style="flex: 1; font-size: 0.75rem;" onclick="runDecryptFile()">Decrypt</button>
+            </div>
+            <p id="encrypt-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500; text-align: center; word-break: break-word;"></p>
+          </div>
+        </div>
+
+        <!-- Sub-Utility 6: Password Recovery -->
+        <div id="util-pane-recover" class="util-sub-pane" style="display: none;">
+          <div class="flex-col" style="gap: 12px;">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">Recover lost PDF/ZIP passwords using dictionary or brute force attacks.</p>
+            <div class="file-picker-btn" onclick="browseFileForUtil('recover')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px; color: var(--accent-emerald);">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+              <span id="recover-file-label">Select locked PDF or ZIP file</span>
+            </div>
+            <input type="hidden" id="recover-input-path">
+
+            <div>
+              <span style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:6px;">Recovery Method:</span>
+              <div class="embedded-chip-tabs" id="recover-mode-tabs">
+                <button class="chip-tab active" onclick="setRecoveryMode('dict_common', this)">Common Dict</button>
+                <button class="chip-tab" onclick="setRecoveryMode('brute_numeric', this)">Numeric Brute</button>
+                <button class="chip-tab" onclick="setRecoveryMode('brute_alpha', this)">Alpha Brute</button>
+                <button class="chip-tab" onclick="setRecoveryMode('dict_custom', this)">Custom Wordlist</button>
+              </div>
+              <input type="hidden" id="recover-mode" value="dict_common">
+            </div>
+
+            <div id="custom-dict-container" style="display:none;">
+              <span style="font-size:0.75rem; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:4px;">Comma Separated Keys:</span>
+              <input type="text" id="recover-custom-candidates" class="input-glass" style="font-size:0.8rem; padding:8px 10px;" placeholder="e.g. key1, pass2, secret3">
+            </div>
+
+            <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="runPasswordRecovery()">Execute Recovery Attack</button>
+            <p id="recover-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500; text-align: center;"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Widget 2: Productivity Scratchpad & Code Vault -->
+      <div class="glass-panel card widget-card" id="widget-dev-vault" style="margin-top: 16px;">
+        <div class="card-header">
+          <svg class="card-icon icon-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <h3>Scratchpad & Snippet Vault</h3>
+        </div>
+        <div class="flex-col" style="gap: 8px;">
+          <textarea id="widget-scratchpad-area" class="input-glass" style="height: 90px; font-size: 0.8rem; line-height: 1.4; resize: none;" placeholder="Jot down local notes or copy passwords here (autosaves)..." oninput="saveScratchpadText()"></textarea>
+          <div style="display:flex; justify-content:space-between; gap: 6px;">
+            <button class="btn-secondary" style="flex:1; min-height: 36px; height: 36px; padding: 6px 12px; font-size: 0.75rem;" onclick="copyScratchpadText()">Copy Notes</button>
+            <button class="btn-secondary" style="flex:1; min-height: 36px; height: 36px; padding: 6px 12px; font-size: 0.75rem; color:var(--accent-rose);" onclick="clearScratchpadText()">Clear</button>
+          </div>
+        </div>
+        <div class="widget-vault-layouts" style="border-top: 1px solid var(--panel-border); padding-top: 10px;">
+          <span class="widget-section-title" style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Insert Code Boilerplate</span>
+          <div class="embedded-chip-tabs snippet-chips" style="padding-bottom: 4px;">
+            <button class="chip-tab" onclick="insertBoilerplate('html')">HTML5 Shell</button>
+            <button class="chip-tab" onclick="insertBoilerplate('flex')">CSS Flexbox</button>
+            <button class="chip-tab" onclick="insertBoilerplate('fetch')">JS Fetch API</button>
+            <button class="chip-tab" onclick="insertBoilerplate('python')">Py Requests</button>
+            <button class="chip-tab" onclick="insertBoilerplate('git')">Git Commit</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: AetherAgent (Merged Code Helper + Q&A + Sandbox) -->
+    <section id="tab-codehelper" class="tab-content">
+      <div class="mobile-subtabs" style="overflow-x: auto; white-space: nowrap; gap: 4px; padding: 4px;">
+        <button id="codehelper-subtab-chat" class="subtab-btn active" onclick="switchCodeHelperSubTab('chat')">AI Coder</button>
+        <button id="codehelper-subtab-pdfqa" class="subtab-btn" onclick="switchCodeHelperSubTab('pdfqa')">PDF Q&A</button>
+        <button id="codehelper-subtab-sandbox" class="subtab-btn" onclick="switchCodeHelperSubTab('sandbox')">Code Sandbox</button>
+      </div>
+
+      <!-- Pane A: Coding Assistant -->
+      <div id="codehelper-pane-chat" class="pane-content active">
+        <div class="glass-panel card">
+          <div class="card-header">
+            <h3>Paste Code and Analyze</h3>
+          </div>
+          <textarea id="code-paste-area" class="input-glass" style="height: 100px; font-family: monospace; font-size: 0.8rem; line-height: 1.4;" placeholder="// Paste code snippet here..."></textarea>
+          <div style="display:flex; gap: 8px; margin-top: 8px;">
+            <button class="btn-neon btn-neon-emerald" style="flex: 1; font-size: 0.75rem; padding: 8px;" onclick="runCodeAnalysis('explain')">Explain</button>
+            <button class="btn-secondary" style="flex: 1; font-size: 0.75rem; padding: 8px;" onclick="runCodeAnalysis('refactor')">Refactor</button>
+          </div>
+        </div>
+
+        <div class="glass-panel card" style="flex: 1; display:flex; flex-direction:column; min-height: 200px;">
+          <div class="card-header">
+            <h3>Assistant Response / Fresh Code</h3>
+          </div>
+          <div id="code-terminal-output" class="result-console" style="flex: 1; min-height: 100px; height: auto;">// AetherAgent generated code and explanations will render here.</div>
+          <div class="chat-input-row" style="margin-top: 8px;">
+            <input type="text" id="code-prompt-input" class="input-glass" placeholder="Ask helper to write code..." onkeydown="if(event.key==='Enter') runCodeGeneration()">
+            <button class="btn-neon btn-neon-emerald" onclick="runCodeGeneration()">Generate</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pane B: PDF Q&A & OCR Ingest -->
+      <div id="codehelper-pane-pdfqa" class="pane-content">
+        <div class="mobile-split-layout">
+          <!-- Document / OCR panel -->
+          <div class="glass-panel card" style="flex-shrink: 0;">
+            <div class="mobile-subtabs">
+              <button id="pdfqa-subtab-index" class="subtab-btn active" onclick="switchPdfQaSubTab('index')">Document Index</button>
+              <button id="pdfqa-subtab-ocr" class="subtab-btn" onclick="switchPdfQaSubTab('ocr')">OCR Ingest</button>
+            </div>
+
+            <!-- Document Index list & upload -->
+            <div id="pdfqa-pane-index" class="pane-content active">
+              <div class="flex-col" style="gap: 8px;">
+                <div style="display:flex; gap: 8px;">
+                  <input type="text" id="pdf-ingest-path" class="input-glass" placeholder="Browse document path...">
+                  <button class="btn-secondary" style="padding: 10px 14px;" onclick="browsePdfForIngest()">Browse</button>
+                </div>
+                <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="ingestPdfDocument()">Index Document</button>
+                <div id="pdf-ingest-progress-bar" style="display:none; width: 100%; height: 4px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow:hidden; margin-top: 6px;">
+                  <div id="pdf-ingest-progress" style="width: 0%; height: 100%; background: var(--accent-emerald);"></div>
+                </div>
+                <p id="pdf-ingest-status" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight:500; margin-top:2px;"></p>
+              </div>
+              
+              <div style="margin-top: 16px;">
+                <p style="font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; color: var(--text-secondary);">Indexed Documents:</p>
+                <div id="ingested-docs-list" class="flex-col" style="gap: 8px; max-height: 120px; overflow-y: auto;">
+                  <p style="font-size: 0.75rem; color: var(--text-muted);">No documents indexed yet.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- OCR notes intake -->
+            <div id="pdfqa-pane-ocr" class="pane-content">
+              <div class="flex-col" style="gap: 12px;">
+                <div>
+                  <p style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">Image File Path:</p>
+                  <div style="display:flex; gap: 6px;">
+                    <input type="text" id="ocr-image-path" class="input-glass" placeholder="Select image file...">
+                    <button class="btn-secondary" style="padding: 8px 12px; font-size: 0.75rem;" onclick="browseOcrImage()">Browse</button>
+                  </div>
+                </div>
+
+                <div>
+                  <p style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">Or Take Webcam Photo:</p>
+                  <div style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; overflow: hidden; position: relative; width: 100%; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;">
+                    <video id="ocr-webcam-feed" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; display: none;"></video>
+                    <canvas id="ocr-webcam-canvas" style="display: none;"></canvas>
+                    <div id="ocr-webcam-placeholder" style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 10px;">
+                      Camera is stopped. Click Start Camera below.
+                    </div>
+                  </div>
+                  <div style="display: flex; gap: 6px; margin-top: 6px;">
+                    <button id="ocr-cam-toggle-btn" class="btn-secondary" style="flex: 1; font-size: 0.7rem; padding: 6px;" onclick="toggleWebcam()">Start Camera</button>
+                    <button id="ocr-capture-btn" class="btn-secondary" style="flex: 1; font-size: 0.7rem; padding: 6px;" onclick="captureWebcamSnapshot()" disabled>Capture Photo</button>
+                  </div>
+                </div>
+
+                <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="extractOcrText()">Extract Text (OCR)</button>
+                <p id="ocr-status-msg" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight:500; margin-top: 2px;"></p>
+
+                <div id="ocr-result-card" style="display: none; flex-direction: column; gap: 8px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px;">
+                  <p style="font-size: 0.75rem; font-weight: 700; color: var(--text-secondary);">Transcribed Text Review:</p>
+                  <textarea id="ocr-text-result" class="input-glass" style="height: 100px; resize: none; font-family: monospace; font-size: 0.75rem; line-height: 1.4; padding: 6px;"></textarea>
+                  <input type="text" id="ocr-save-filename" class="input-glass" style="font-size: 0.75rem; padding: 6px;" placeholder="note_name.txt">
+                  <button class="btn-neon" style="width:100%;" onclick="saveOcrTextToDb()">Index into Database</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Room -->
+          <div class="glass-panel card chat-card" style="flex: 1; display: flex; flex-direction: column; min-height: 250px;">
+            <div class="card-header" style="flex-shrink: 0; padding-bottom: 6px;">
+              <h3>PDF Chat Room</h3>
+            </div>
+            <div id="qa-chat-messages" class="chat-messages" style="flex: 1; min-height: 120px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; border:1px solid rgba(255,255,255,0.02); margin-bottom: 8px;">
+              <div class="chat-bubble assistant">
+                <div>Hello! Select your indexed document(s) above, then ask me questions. I cite page numbers from your documents.</div>
+              </div>
+            </div>
+            <div class="chat-input-row" style="flex-shrink: 0;">
+              <input type="text" id="qa-chat-input" class="input-glass" placeholder="Ask a question..." onkeydown="if(event.key==='Enter') sendQaChatMessage()">
+              <button class="btn-neon btn-neon-emerald" onclick="sendQaChatMessage()">Ask</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pane C: Interactive Code Sandbox -->
+      <div id="codehelper-pane-sandbox" class="pane-content">
+        <div class="glass-panel card" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 0; min-height: 350px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 8px; flex-shrink: 0; gap: 8px;">
+            <div class="segmented-control" id="sandbox-lang-control" style="max-width: 240px;">
+              <button class="segment-btn active" onclick="setSandboxLang('python', this)">Python</button>
+              <button class="segment-btn" onclick="setSandboxLang('javascript', this)">JavaScript</button>
+              <button class="segment-btn" onclick="setSandboxLang('html', this)">HTML / CSS</button>
+            </div>
+            <input type="hidden" id="sandbox-lang-select" value="python">
+            <button class="btn-secondary" style="padding: 4px 8px; font-size: 0.7rem; min-height: 32px;" onclick="resetSandboxCode()">Reset</button>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0;">
+            <div style="flex: 1; display: flex; flex-direction: column; min-height: 120px;">
+              <span style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px;">Source Code:</span>
+              <textarea id="sandbox-code-editor" class="input-glass" style="flex: 1; font-family: monospace; font-size: 0.8rem; line-height: 1.4; resize: none; background: rgba(0,0,0,0.3); padding: 8px; border:1px solid rgba(255,255,255,0.05); outline:none;" placeholder="# Write Python code here..."></textarea>
+            </div>
+            
+            <div style="flex: 1; display: flex; flex-direction: column; min-height: 120px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-size: 0.75rem; color: var(--text-secondary);">Output / Preview:</span>
+                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.65rem;" onclick="clearSandboxConsole()">Clear</button>
+              </div>
+              <div id="sandbox-console-output" class="result-console" style="flex: 1; color: #10b981; background: #0c0f12; padding: 8px; border:1px solid rgba(255,255,255,0.05);">[Sandbox Ready]</div>
+              <iframe id="sandbox-html-preview" style="display: none; flex: 1; background: #fff; border: 1px solid var(--panel-border); border-radius: 6px; width: 100%; height: 100%;"></iframe>
+            </div>
+          </div>
+          
+          <div style="display: flex; justify-content: flex-end; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px; flex-shrink: 0;">
+            <button class="btn-neon btn-neon-emerald" style="padding: 8px 16px; font-size: 0.75rem; display: flex; align-items: center; gap: 6px;" onclick="runSandboxCode()">
+              <svg style="width: 10px; height: 10px; stroke: currentColor; fill: currentColor;" viewBox="0 0 24 24">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              <span>Run Code</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Widget 3: Aether Code Toolkit -->
+      <div class="glass-panel card widget-card" id="widget-text-toolbox" style="margin-top: 16px;">
+        <div class="card-header">
+          <svg class="card-icon icon-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <h3>Aether Code Toolkit</h3>
+        </div>
+        <div class="flex-col" style="gap: 8px;">
+          <input type="text" id="widget-tool-input" class="input-glass" style="font-size: 0.8rem; padding: 8px 10px;" placeholder="Enter string to analyze...">
+          
+          <div class="embedded-chip-tabs toolkit-chips" style="padding-bottom: 4px;">
+            <button class="chip-tab active" onclick="runTextTool('stats', this)">Analyze Stats</button>
+            <button class="chip-tab" onclick="runTextTool('b64enc', this)">Base64 Enc</button>
+            <button class="chip-tab" onclick="runTextTool('b64dec', this)">Base64 Dec</button>
+            <button class="chip-tab" onclick="runTextTool('hash', this)">SHA-256 Hash</button>
+          </div>
+          
+          <div id="widget-tool-output" class="result-console" style="min-height: 48px; background:#0c0f12; color:#10b981; padding: 8px 12px; margin-top: 4px; border:1px solid rgba(16,185,129,0.15); font-family: monospace;">[Ready for analysis]</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: Creative Studio -->
+    <section id="tab-creative" class="tab-content">
+      <div class="mobile-subtabs" style="overflow-x: auto; white-space: nowrap; gap: 4px; padding: 4px;">
+        <button id="creative-subtab-paint" class="subtab-btn active" onclick="switchCreativeSubTab('paint')">AI Paint</button>
+        <button id="creative-subtab-bg" class="subtab-btn" onclick="switchCreativeSubTab('bg')">BG Remove</button>
+        <button id="creative-subtab-voice" class="subtab-btn" onclick="switchCreativeSubTab('voice')">Voice Notes</button>
+      </div>
+
+      <!-- Pane A: AI Painter -->
+      <div id="creative-pane-paint" class="pane-content active">
+        <div class="glass-panel card">
+          <div class="card-header">
+            <h3>AI Painter Studio</h3>
+          </div>
+          <div class="flex-col" style="gap: 12px;">
+            <textarea id="creative-prompt" class="input-glass" style="height: 100px; resize: none;" placeholder="Describe image to generate..."></textarea>
+            <button class="btn-neon btn-neon-emerald" style="width:100%; min-height: 44px;" onclick="generateCreativeImage()">Generate Image</button>
+            <p id="creative-status" style="font-size:0.75rem; color:var(--accent-emerald); font-weight:500;"></p>
+            <div id="creative-result-container" class="creative-output" style="display:none; margin-top:8px; aspect-ratio: 1; border-radius: 8px; overflow:hidden; border: 1px solid var(--panel-border);">
+              <img id="creative-result-img" style="width:100%; height:100%; object-fit:contain;" src="">
+            </div>
+            <div id="creative-action-buttons" style="display: none; gap: 12px; margin-top: 10px;">
+              <button id="creative-btn-copy" class="btn-neon btn-neon-cyan" onclick="copyGeneratedImageToClipboardMobile()" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.8rem; min-height: 38px;">
+                <svg style="width: 14px; height: 14px; stroke: currentColor; fill: none;" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy Art
+              </button>
+              <button id="creative-btn-save" class="btn-neon btn-neon-emerald" onclick="downloadGeneratedImageMobile()" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.8rem; min-height: 38px;">
+                <svg style="width: 14px; height: 14px; stroke: currentColor; fill: none;" viewBox="0 0 24 24" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Save Art
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pane B: BG Remover -->
+      <div id="creative-pane-bg" class="pane-content">
+        <div class="glass-panel card">
+          <div class="card-header">
+            <h3>Background Remover</h3>
+          </div>
+          <div class="flex-col" style="gap: 12px;">
+            <div style="display:flex; gap: 8px;">
+              <input type="text" id="creative-bg-image-path" class="input-glass" placeholder="Select image...">
+              <button class="btn-secondary" style="padding: 10px 16px; min-height: 44px;" onclick="browseImageForBgRemoval()">Browse</button>
+            </div>
+            <button class="btn-neon btn-neon-emerald" style="width:100%; min-height: 44px;" onclick="removeImageBackground()">Remove BG</button>
+            <p id="creative-bg-status" style="font-size:0.75rem; color:var(--accent-emerald); font-weight:500;"></p>
+            <div id="creative-bg-result-container" class="creative-output" style="display:none; margin-top:8px; aspect-ratio: 1; border-radius: 8px; overflow:hidden; border: 1px solid var(--panel-border);">
+              <img id="creative-bg-result-img" style="width:100%; height:100%; object-fit:contain;" src="">
+            </div>
+            <div id="creative-bg-action-buttons" style="display: none; gap: 12px; margin-top: 10px;">
+              <button id="creative-bg-btn-copy" class="btn-neon btn-neon-cyan" onclick="copyBgRemovedImageToClipboardMobile()" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.8rem; min-height: 38px;">
+                <svg style="width: 14px; height: 14px; stroke: currentColor; fill: none;" viewBox="0 0 24 24" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy Cutout
+              </button>
+              <button id="creative-bg-btn-save" class="btn-neon btn-neon-emerald" onclick="downloadBgRemovedImageMobile()" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.8rem; min-height: 38px;">
+                <svg style="width: 14px; height: 14px; stroke: currentColor; fill: none;" viewBox="0 0 24 24" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2-2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Save Cutout
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pane C: Voice Notes Transcriber -->
+      <div id="creative-pane-voice" class="pane-content">
+        <div class="glass-panel card">
+          <div class="card-header">
+            <h3>Lecture Audio Notes</h3>
+          </div>
+          <div class="flex-col" style="gap: 12px; align-items: center; text-align: center;">
+            <p style="font-size:0.8rem; color:var(--text-secondary);">Record lecture notes or upload local audio to transcribe locally.</p>
+            
+            <div style="display: flex; gap: 10px; width: 100%;">
+              <button id="voice-record-btn" class="btn-neon btn-neon-emerald" style="flex: 1; min-height: 48px;" onclick="toggleAudioRecording()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 16px; height: 16px; margin-right: 6px;">
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" x2="12" y1="19" y2="22"/>
+                </svg>
+                <span id="voice-record-btn-text">Record Audio</span>
+              </button>
+              
+              <button class="btn-secondary" style="flex: 1; min-height: 48px;" onclick="browseVoiceAudioFile()">
+                Browse Audio
+              </button>
+            </div>
+            
+            <audio id="voice-audio-playback" controls style="display: none; width: 100%; margin-top: 8px;"></audio>
+            <p id="voice-status-msg" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight: 500;"></p>
+            
+            <button class="btn-neon btn-neon-emerald" style="width: 100%; min-height: 44px;" onclick="transcribeAudioFile()">Transcribe & Summarize</button>
+            
+            <div id="voice-result-card" style="display: none; width: 100%; flex-direction: column; gap: 8px; border-top: 1px solid var(--panel-border); padding-top: 10px; text-align: left;">
+              <h4 style="font-size:0.8rem; font-weight:700; color:var(--text-primary);">Transcription preview:</h4>
+              <textarea id="voice-transcript-result" class="input-glass" style="height: 90px; resize: none; font-size: 0.8rem; line-height: 1.4;"></textarea>
+              
+              <div style="display: flex; gap: 8px; margin-top: 4px;">
+                <button class="btn-secondary" style="flex: 1; min-height: 36px; height: 36px; padding: 6px 12px; font-size: 0.75rem;" onclick="copyTranscription()">Copy Text</button>
+                <button class="btn-secondary" style="flex: 1; min-height: 36px; height: 36px; padding: 6px 12px; font-size: 0.75rem;" onclick="saveTranscriptionAsNote()">Save as Note</button>
+              </div>
+
+              <h4 style="font-size:0.8rem; font-weight:700; color:var(--text-primary); margin-top: 10px;">AI Bullet Points Summary:</h4>
+              <div id="voice-summary-result" class="result-console" style="height: 100px;">Summary points will render here...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Widget 4: Studio Workspace Helper -->
+      <div class="glass-panel card widget-card" id="widget-canvas-palette" style="margin-top: 16px;">
+        <div class="card-header">
+          <svg class="card-icon icon-gold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.32622 19.475 6.00282 19.6139 6.61397 19.3516C6.8824 19.2364 7.17243 19.1765 7.47715 19.1765C8.31818 19.1765 9 19.8583 9 20.6993C9 21.4179 9.5821 22 10.3007 22H12Z"/>
+          </svg>
+          <h3>Studio Canvas & Colors</h3>
+        </div>
+        
+        <div class="flex-col" style="gap: 12px;">
+          <!-- Doodle Canvas -->
+          <div>
+            <span class="widget-section-title" style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Doodle Signature Canvas</span>
+            <div style="position:relative; background:#ffffff; border-radius:8px; border:1.5px solid var(--panel-border); overflow:hidden; width:100%; height:110px; cursor:crosshair;">
+              <canvas id="widget-doodle-canvas" style="width:100%; height:100%; display:block; background:#ffffff;"></canvas>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; gap:8px;">
+              <div style="display:flex; gap:6px; align-items:center; flex-wrap: wrap;">
+                <span style="font-size:0.65rem; color:var(--text-muted); font-weight:600;">Brush:</span>
+                <input type="color" id="widget-doodle-color" value="#10b981" style="border:none; background:none; width:26px; height:26px; padding: 0; cursor:pointer;">
+                <input type="range" id="widget-doodle-size" min="1" max="10" value="3" class="slider-glass" style="width:50px;">
+              </div>
+              <button class="btn-secondary" style="min-height:30px; height:30px; font-size:0.7rem; padding:0 10px;" onclick="clearWidgetCanvas()">Clear</button>
+            </div>
+          </div>
+          
+          <!-- HSL Color Palette -->
+          <div style="border-top: 1px solid var(--panel-border); padding-top: 10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span class="widget-section-title" style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0;">Palette Generator</span>
+              <button class="btn-secondary" style="min-height:30px; height:30px; font-size:0.7rem; padding:0 10px;" onclick="generateHslPalette()">Generate</button>
+            </div>
+            <div id="widget-color-palette-grid" style="display:grid; grid-template-columns: repeat(5, 1fr); gap: 6px;">
+              <!-- Generated chips will insert here -->
+            </div>
+            <span style="display:block; font-size:0.6rem; color:var(--text-muted); text-align:center; margin-top:6px;">Tap a color chip to copy its hex code</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 5: Study Assistant -->
+    <section id="tab-study" class="tab-content">
+      <div class="mobile-subtabs">
+        <button id="study-subtab-math" class="subtab-btn active" onclick="switchStudySubTab('math')">Math Solver</button>
+        <button id="study-subtab-planner" class="subtab-btn" onclick="switchStudySubTab('planner')">Syllabus</button>
+        <button id="study-subtab-recall" class="subtab-btn" onclick="switchStudySubTab('recall')">Active Recall</button>
+      </div>
+
+      <!-- Pane A: Math Solver -->
+      <div id="study-pane-math" class="pane-content active">
+        <div class="glass-panel card">
+          <div class="card-header">
+            <h3>Symbolic Math Solver</h3>
+          </div>
+          <div class="flex-col" style="gap: 12px;">
+            <input type="text" id="math-expression" class="input-glass" placeholder="Enter equation, e.g. x**2 - 4 = 0">
+            <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="solveMathEquation()">Solve Equation</button>
+            <div class="result-console" style="margin-top: 10px;">
+              <div id="math-plain-result" style="font-size: 0.9rem; margin-bottom: 6px; font-weight:500;"></div>
+              <div id="math-latex-result" style="font-size: 1.2rem; color: var(--accent-emerald); text-align: center;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pane B: Syllabus Planner -->
+      <div id="study-pane-planner" class="pane-content">
+        <div class="glass-panel card">
+          <div class="card-header">
+            <h3>Syllabus Planner</h3>
+          </div>
+          <div class="flex-col" style="gap: 12px;">
+            <textarea id="study-syllabus-text" class="input-glass" style="height: 120px; resize:none;" placeholder="Paste course syllabus or outline here to structure study chapters..."></textarea>
+            <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="generateConceptPlannerSheet()">Generate Study Plan</button>
+            <div id="concept-sheet-output" class="result-console" style="height: 200px;">Your generated study concepts and cheat sheet notes will appear here.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pane C: Recall Flashcards -->
+      <div id="study-pane-recall" class="pane-content">
+        <div class="glass-panel card">
+          <div class="card-header">
+            <h3>Active Recall Room</h3>
+          </div>
+          <div id="flashcard-box" class="flashcard-deck" style="min-height: 150px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.2); border-radius: 10px; margin-bottom: 12px; border:1px solid rgba(16,185,129,0.06); padding: 20px; text-align: center;">
+            <p style="font-size: 0.9rem; font-weight:500;">No flashcards compiled yet. Index documents under PDF Q&A to generate them!</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-secondary" style="flex: 1;" onclick="prevFlashcard()">Prev</button>
+            <button class="btn-secondary" style="flex: 1;" onclick="revealFlashcard()">Reveal</button>
+            <button class="btn-secondary" style="flex: 1;" onclick="nextFlashcard()">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Widget 5: Recall Performance Tracker & Mindset Booster -->
+      <div class="glass-panel card widget-card" id="widget-study-tracker" style="margin-top: 16px;">
+        <div class="card-header">
+          <svg class="card-icon icon-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+          <h3>Recall Analytics & Boost</h3>
+        </div>
+        
+        <div class="flex-col" style="gap:10px;">
+          <div class="device-stats-grid" style="gap: 8px;">
+            <div class="stat-item" style="padding: 6px 10px;">
+              <span class="stat-label">RETENTION RATE</span>
+              <span class="stat-value text-emerald" style="font-size:0.95rem;">84%</span>
+            </div>
+            <div class="stat-item" style="padding: 6px 10px;">
+              <span class="stat-label">STUDY STREAK</span>
+              <span class="stat-value text-gold" style="font-size:0.95rem; display:flex; align-items:center; gap:4px;">
+                5 Days
+                <svg style="width:12px; height:12px; stroke:var(--accent-gold); fill:var(--accent-gold);" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3.5z"/></svg>
+              </span>
+            </div>
+          </div>
+          
+          <div class="widget-mindset-box" style="border-top:1px solid var(--panel-border); padding-top:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span class="widget-section-title" style="display: block; font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 0;">Mindset Prompt</span>
+              <button class="btn-secondary" style="min-height:28px; height:28px; font-size:0.7rem; padding:0 10px; min-width: 100px;" onclick="triggerMindsetBoost()">Boost</button>
+            </div>
+            <div class="result-console" id="widget-mindset-output" style="min-height: 48px; background:rgba(0,0,0,0.15); color:var(--text-secondary); border:1px solid var(--panel-border); font-family:inherit; font-size:0.75rem; font-style:italic; padding:6px 10px; line-height:1.35;">
+              "The secret of getting ahead is getting started." — Mark Twain
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 6: Performance Telemetry -->
+    <section id="tab-performance" class="tab-content">
+      <div class="glass-panel card" style="padding: 16px;">
+        <div class="card-header" style="margin-bottom: 12px;">
+          <svg class="card-icon icon-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; color: var(--accent-emerald); filter: drop-shadow(0 0 4px var(--accent-emerald));">
+            <line x1="18" y1="20" x2="18" y2="10"/>
+            <line x1="12" y1="20" x2="12" y2="4"/>
+            <line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          <h3>System Performance</h3>
+        </div>
+        
+        <!-- Horizontal Scrollable Resource Chips -->
+        <div class="resource-selector-row" style="display: flex; gap: 10px; overflow-x: auto; padding: 4px 4px 12px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; margin-bottom: 8px;">
+          <div class="resource-chip active" id="res-chip-cpu" onclick="selectTelemetryResource('cpu')">
+            <span class="chip-label">CPU</span>
+            <span class="chip-value text-purple" id="telemetry-cpu-pct">--</span>
+            <div class="chip-sparkline-box"><canvas id="sparkline-cpu"></canvas></div>
+          </div>
+          <div class="resource-chip" id="res-chip-ram" onclick="selectTelemetryResource('ram')">
+            <span class="chip-label">Memory</span>
+            <span class="chip-value text-cyan" id="telemetry-ram-pct">--</span>
+            <div class="chip-sparkline-box"><canvas id="sparkline-ram"></canvas></div>
+          </div>
+          <div class="resource-chip" id="res-chip-vram" onclick="selectTelemetryResource('vram')">
+            <span class="chip-label">Swap</span>
+            <span class="chip-value text-rose" id="telemetry-vram-pct">--</span>
+            <div class="chip-sparkline-box"><canvas id="sparkline-vram"></canvas></div>
+          </div>
+          <div class="resource-chip" id="res-chip-gpu" onclick="selectTelemetryResource('gpu')">
+            <span class="chip-label">GPU</span>
+            <span class="chip-value text-emerald" id="telemetry-gpu-pct">--</span>
+            <div class="chip-sparkline-box"><canvas id="sparkline-gpu"></canvas></div>
+          </div>
+          <div class="resource-chip" id="res-chip-temp" onclick="selectTelemetryResource('temp')">
+            <span class="chip-label">Temp</span>
+            <span class="chip-value text-gold" id="telemetry-temp-pct">--</span>
+            <div class="chip-sparkline-box"><canvas id="sparkline-temp"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Big Real-time Graph Detail Card -->
+        <div class="telemetry-detail-card" style="background: rgba(0,0,0,0.25); border: 1px solid var(--panel-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4 id="telemetry-detail-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">CPU Utilization</h4>
+            <span id="telemetry-detail-val" style="font-size: 1.2rem; font-weight: 800; color: var(--accent-emerald);">--</span>
+          </div>
+          
+          <div style="position: relative; height: 160px; width: 100%; background: rgba(0, 0, 0, 0.3); border-radius: 8px; border: 1px solid var(--panel-border); overflow: hidden; padding: 4px;">
+            <div style="position: absolute; top: 8px; right: 10px; font-size: 0.65rem; color: var(--text-muted); z-index: 10;">60 Seconds History</div>
+            <div style="position: absolute; top: 8px; left: 8px; font-size: 0.65rem; color: var(--text-muted); z-index: 10;">100%</div>
+            <div style="position: absolute; bottom: 8px; left: 8px; font-size: 0.65rem; color: var(--text-muted); z-index: 10;">0%</div>
+            <canvas id="telemetry-detail-chart" style="width: 100%; height: 100%; display: block;"></canvas>
+          </div>
+          
+          <!-- Detailed Specs Grid -->
+          <div class="resource-detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid var(--panel-border); padding-top: 12px;">
+            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec1-label">Processor</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); word-break: break-word; overflow-wrap: break-word;" id="telemetry-spec1-val">Snapdragon 8 Gen 3</span>
+            </div>
+            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec2-label">Cores</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec2-val">8 Cores (1+5+2)</span>
+            </div>
+            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec3-label">Clock Speed</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec3-val">3.30 GHz</span>
+            </div>
+            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec4-label">Processes</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec4-val">120 Active</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Bottom Navigation Bar -->
+  <nav class="bottom-nav">
+    <button id="nav-dashboard" class="nav-item active" onclick="switchTab('dashboard')">
+      <div class="nav-icon-wrapper">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="7" height="9"/>
+          <rect x="14" y="3" width="7" height="5"/>
+          <rect x="14" y="12" width="7" height="9"/>
+          <rect x="3" y="16" width="7" height="5"/>
+        </svg>
+      </div>
+      <span class="nav-label">Dashboard</span>
+    </button>
+    
+    <button id="nav-productivity" class="nav-item" onclick="switchTab('productivity')">
+      <div class="nav-icon-wrapper">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      </div>
+      <span class="nav-label">Productivity</span>
+    </button>
+    
+    <button id="nav-codehelper" class="nav-item" onclick="switchTab('codehelper')">
+      <div class="nav-icon-wrapper">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 18 22 12 16 6"/>
+          <polyline points="8 6 2 12 8 18"/>
+        </svg>
+      </div>
+      <span class="nav-label">AetherAgent</span>
+    </button>
+    
+    <button id="nav-creative" class="nav-item" onclick="switchTab('creative')">
+      <div class="nav-icon-wrapper">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.32622 19.475 6.00282 19.6139 6.61397 19.3516C6.8824 19.2364 7.17243 19.1765 7.47715 19.1765C8.31818 19.1765 9 19.8583 9 20.6993C9 21.4179 9.5821 22 10.3007 22H12Z"/>
+          <circle cx="7.5" cy="10.5" r="1" fill="currentColor"/>
+          <circle cx="11.5" cy="7.5" r="1" fill="currentColor"/>
+          <circle cx="16.5" cy="9.5" r="1" fill="currentColor"/>
+          <circle cx="15.5" cy="14.5" r="1" fill="currentColor"/>
+        </svg>
+      </div>
+      <span class="nav-label">Studio</span>
+    </button>
+    
+    <button id="nav-study" class="nav-item" onclick="switchTab('study')">
+      <div class="nav-icon-wrapper">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        </svg>
+      </div>
+      <span class="nav-label">Study</span>
+    </button>
+    
+    <button id="nav-performance" class="nav-item" onclick="switchTab('performance')">
+      <div class="nav-icon-wrapper">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"/>
+          <line x1="12" y1="20" x2="12" y2="4"/>
+          <line x1="6" y1="20" x2="6" y2="14"/>
+        </svg>
+      </div>
+      <span class="nav-label">Telemetry</span>
+    </button>
+  </nav>
+
+  <!-- App Settings Modal -->
+  <div id="settings-modal" class="modal-overlay" style="display: none;">
+    <div class="glass-panel modal-card" style="max-width: 360px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; margin-bottom: 16px;">
+        <h3 style="font-weight: 700; color: var(--accent-emerald); font-size: 1.15rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px;">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>App Settings</span>
+        </h3>
+        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;" onclick="closeSettingsPopup()">
+          <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px;">
+        <!-- Operation Mode Panel -->
+        <div class="flex-col" style="gap: 8px;">
+          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Operation Mode</h4>
+          <div style="display: flex; flex-direction: column; gap: 8px; background: var(--card-bg-inner); padding: 8px; border-radius: 6px; border: 1px solid var(--panel-border);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size:0.75rem; font-weight:600; color: var(--text-secondary);">Offline Standalone:</span>
+              <label class="switch">
+                <input type="checkbox" id="mode-standalone-checkbox" onchange="toggleOperationMode(this.checked)">
+                <span class="slider-switch"></span>
+              </label>
+            </div>
+            <div id="settings-api-host-container" style="display: none; flex-direction: column; gap: 4px; margin-top: 4px;">
+              <span style="font-size:0.65rem; color: var(--text-muted);">PC Companion Server URL:</span>
+              <input type="text" id="setting-api-base" class="input-glass" style="font-size:0.7rem; min-height: 28px; padding: 4px 8px; border-radius: 4px;" placeholder="e.g. http://192.168.1.100:49152">
+            </div>
+          </div>
+        </div>
+
+        <!-- Model Manager Section -->
+        <div class="flex-col" style="gap: 8px;">
+          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Local AI Models</h4>
+          <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="window.location.href='model-manager.html'">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 15px; height: 15px; color: var(--accent-emerald);">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l-7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 2 0l7 4A2 2 0 0 0 21 16z"/>
+            </svg>
+            <span>Manage Offline AI Models</span>
+          </button>
+        </div>
+
+        <!-- Appearance Panel -->
+        <div class="flex-col" style="gap: 8px;">
+          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Appearance</h4>
+          <div class="theme-switch-container">
+            <span style="font-size:0.75rem; font-weight:600; color: var(--text-secondary);">Dark Mode:</span>
+            <label class="switch">
+              <input type="checkbox" id="theme-toggle-checkbox" onchange="toggleTheme(this.checked)">
+              <span class="slider-switch"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- AetherShare Settings -->
+        <div class="flex-col" style="gap: 8px;">
+          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">AetherShare Settings</h4>
+          <div class="theme-switch-container">
+            <span style="font-size:0.75rem; font-weight:600; color: var(--text-secondary);">Session Expiry:</span>
+            <select id="share-expiry-select" class="input-glass" style="width: 140px; padding: 4px 8px; font-size: 0.75rem; min-height: 32px;" onchange="updateShareSessionSetting(this.value)">
+              <option value="900000">15 Minutes</option>
+              <option value="1800000">30 Minutes</option>
+              <option value="3600000">1 Hour</option>
+              <option value="7200000" selected>2 Hours</option>
+              <option value="14400000">4 Hours</option>
+              <option value="never">Never</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Local Storage and Diagnostics -->
+        <div class="flex-col" style="gap: 8px;">
+          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Local Diagnostics</h4>
+          <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem;" onclick="resetLocalData()">Clear App Local Data</button>
+          <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem; margin-top: 4px;" onclick="showOnboardingAgain()">Run Feature Setup Survey</button>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px;">
+        <button class="btn-secondary" style="padding: 6px 12px; font-size: 0.75rem; min-height: 32px;" onclick="showAppInfoPopupFromSettings()">About App</button>
+        <button class="btn-neon btn-neon-emerald" style="padding: 6px 18px; font-size: 0.8rem; min-height: 32px;" onclick="closeSettingsPopup()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Full-screen Local Model Manager Modal -->
+  <div id="model-manager-modal" class="modal-overlay" style="display: none; z-index: 100001; background: rgba(5, 8, 7, 0.85); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);">
+    <div class="glass-panel modal-card" style="max-width: 480px; width: 92%; height: 85%; display: flex; flex-direction: column; justify-content: space-between; padding: 24px; box-sizing: border-box; border-radius: 16px; border: 1.5px solid var(--panel-border);">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; margin-bottom: 16px; flex-shrink: 0;">
+        <h3 style="font-weight: 700; color: var(--accent-emerald); font-size: 1.2rem; margin: 0; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 18px; height: 18px; color: var(--accent-emerald);">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l-7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 2 0l7 4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+            <line x1="12" y1="22.08" x2="12" y2="12"/>
+          </svg>
+          <span>Local AI Model Manager</span>
+        </h3>
+        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;" onclick="closeModelManagerModal()">
+          <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Scrollable list of models -->
+      <div id="model-manager-list-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding-right: 4px;">
+        <!-- Dynamic models rendered here -->
+      </div>
+      
+      <!-- Storage and Action Footer -->
+      <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0;">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-secondary);">
+            <span>Device Storage: <b id="model-manager-storage-text">-- / -- GB Free</b></span>
+            <span id="model-manager-storage-percent">--%</span>
+          </div>
+          <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; position: relative;">
+            <div id="model-manager-storage-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan) 0%, var(--accent-emerald) 100%); border-radius: 4px; transition: width 0.3s ease;"></div>
+          </div>
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button class="btn-neon btn-neon-emerald" style="padding: 8px 20px; font-size: 0.8rem; min-height: 36px;" onclick="closeModelManagerModal()">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Info Modal -->
+  <div id="app-info-modal" class="modal-overlay" style="display: none;">
+    <div class="glass-panel modal-card" style="text-align: center; display: flex; flex-direction: column; align-items: center;">
+      <img class="app-logo-theme" src="images/logo_transparent.png" alt="AetherDesk Logo" style="width: 50px; height: 50px; object-fit: contain; margin-bottom: 12px; filter: drop-shadow(0 0 6px var(--accent-emerald));">
+      <h3 style="font-weight: 700; color: var(--accent-emerald); font-size: 1.25rem; margin-bottom: 10px; font-family: 'Outfit', sans-serif;">AetherDesk Mobile</h3>
+      <div style="font-size: 0.85rem; line-height: 1.5; color: var(--text-secondary); margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; text-align: left; width: 100%;">
+        <p><b>Version:</b> v1.0.0</p>
+        <p><b>Target:</b> Android 14+</p>
+        <p><b>Hardware Requirement:</b> Min 6GB RAM, 4GB local storage</p>
+        <p><b>Developer:</b> Rishit Ghosh</p>
+        <p style="font-size: 0.75rem; border-top: 1px solid var(--panel-border); padding-top: 8px; color: var(--text-muted);">This application runs fully sandboxed, executing models completely local to the device without external telemetry leaks.</p>
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end; width: 100%;">
+        <button class="btn-secondary" style="padding: 10px 18px; font-size: 0.8rem;" onclick="copyAppVersionInfo()">
+          <span id="copy-btn-text">Copy Info</span>
+        </button>
+        <button class="btn-neon btn-neon-emerald" style="padding: 10px 18px; font-size: 0.8rem;" onclick="closeAppInfoPopup()">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AetherShare Pairing Modal -->
+  <div id="share-pairing-modal" class="modal-overlay" style="display: none;">
+    <div class="glass-panel modal-card" style="max-width: 350px; text-align: center; display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 8px;">
+        <h3 style="font-weight: 700; color: var(--accent-emerald); font-size: 1.15rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px; color: var(--accent-emerald);">
+            <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>
+            <polyline points="16 6 12 2 8 6"/>
+            <line x1="12" y1="2" x2="12" y2="15"/>
+          </svg>
+          <span>AetherShare Pairing</span>
+        </h3>
+        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;" onclick="closeAetherSharePairingModal()">
+          <svg style="width: 18px; height: 18px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 0; line-height: 1.4;">Scan this QR code with another AetherDesk device to initiate a secure offline session.</p>
+
+      <!-- CSS-based QR code matrix -->
+      <div style="margin: 10px auto; width: 140px; height: 140px; background: white; padding: 10px; border-radius: 8px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: 100%; height: 100%;">
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: white;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: white;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: white;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: white;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: white;"></div>
+          <div style="background: white;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: white;"></div>
+          <div style="background: white;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: white;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+          <div style="background: black; border-radius: 2px;"></div>
+        </div>
+      </div>
+
+      <div style="background: var(--card-bg-inner); border: 1px solid var(--panel-border); padding: 8px; border-radius: 6px;">
+        <span style="font-size: 0.65rem; color: var(--text-muted); display: block; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Manual Pairing Pin</span>
+        <span style="font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 700; color: var(--accent-emerald); letter-spacing: 2px;">8842</span>
+      </div>
+
+      <span id="pairing-session-info-text" style="font-size: 0.65rem; color: var(--text-muted); line-height: 1.3;">Session auto-expires in 2 hours (adjustable in settings).</span>
+
+      <div style="display: flex; gap: 8px; flex-direction: column; margin-top: 4px;">
+        <button class="btn-neon btn-neon-emerald" style="width: 100%; min-height: 38px; font-size: 0.8rem;" onclick="simulateAetherSharePairing()">Simulate Incoming Connection</button>
+        <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem;" onclick="closeAetherSharePairingModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aether Document Scanner Viewport Overlay -->
+  <div id="aether-scanner-viewport" class="scanner-overlay" style="display: none; flex-direction: column; justify-content: stretch; padding: 0; background: #000000; color: #ffffff;">
+    <!-- Camera Shutter Flash Overlay -->
+    <div id="scanner-flash" class="flash-overlay"></div>
+
+    <!-- Viewfinder HUD (Capture Screen) -->
+    <div id="scanner-capture-screen" class="scanner-screen" style="display: flex; flex-direction: column; justify-content: space-between; width: 100%; height: 100%; padding: 24px 20px; box-sizing: border-box;">
+      <div class="hud-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding-top: env(safe-area-inset-top, 24px);">
+        <button class="btn-hud-close" onclick="closeAetherScanner()" style="margin: 0; padding: 8px; font-size: 1.8rem; background: none; border: none; color: #fff; line-height: 1;">×</button>
+        
+        <div style="display: flex; align-items: center; gap: 16px; z-index: 10002;">
+          <button id="scanner-flashlight-btn" onclick="toggleScannerFlashlight()" class="scanner-utility-btn" style="padding: 8px; background: rgba(255,255,255,0.15); border-radius: 12px; border: none; color: #fff; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px;" title="Toggle Flashlight">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </button>
+          <button id="scanner-camera-toggle-btn" onclick="switchScannerCamera()" class="scanner-utility-btn" style="padding: 8px; background: rgba(255,255,255,0.15); border-radius: 12px; border: none; color: #fff; display: flex; align-items: center; justify-content: center; width: 40px; height: 40px;" title="Switch Front/Rear Camera">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg>
+          </button>
+        </div>
+      </div>
+      
+      <div class="viewfinder-container">
+        <div class="grid-helper"></div>
+        
+        <!-- Real Camera Feed -->
+        <video id="scanner-camera-feed" autoplay playsinline style="position: absolute; width: 100%; height: 100%; object-fit: cover; display: none; z-index: 1;"></video>
+        
+        <!-- Simulated Document Sheet under Viewfinder -->
+        <div id="simulated-document-target" class="document-sheet">
+          <div class="doc-header-sim"></div>
+          <div class="doc-text-skeleton-line" style="width: 80%;"></div>
+          <div class="doc-text-skeleton-line" style="width: 90%;"></div>
+          <div class="doc-text-skeleton-line" style="width: 70%;"></div>
+          <div class="doc-text-skeleton-line" style="width: 85%;"></div>
+          <div class="doc-text-skeleton-line" style="width: 60%;"></div>
+          <div class="doc-footer-sim"></div>
+        </div>
+        
+        <!-- Pulsing AI Edge Alignment Corners -->
+        <div class="edge-corners-box">
+          <div class="corner top-left"></div>
+          <div class="corner top-right"></div>
+          <div class="corner bottom-left"></div>
+          <div class="corner bottom-right"></div>
+          <div class="scanner-laser-line"></div>
+        </div>
+      </div>
+      
+      <div class="hud-footer" style="position: relative; height: 130px; display: flex; justify-content: center; align-items: flex-start; padding-bottom: 0px; width: 100%;">
+        
+        <!-- Import Button (Bottom Left or Center? In screenshot, Import is bottom center just below shutter. But wait, we can't put it *below* shutter without a container. Let's make a container for the shutter and import.) -->
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+          <button id="scanner-shutter-btn" class="shutter-btn" onclick="captureScannerPage()" style="margin-bottom: 15px; width: 80px; height: 80px; border: 4px solid #fff;"></button>
+          
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;" onclick="document.getElementById('fileInput').click()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" style="width: 20px; height: 20px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            <span style="color: #ffffff; font-size: 0.75rem; font-weight: 500;">Import</span>
+          </div>
+        </div>
+        
+        <!-- Right side batch badge / Done button -->
+        <div style="position: absolute; right: 0; bottom: 30px; display: flex; align-items: center;">
+          <div class="batch-badge-container" id="scanner-done-btn" onclick="goToReviewScreen()" style="display: none; cursor: pointer; position: relative;">
+            <img id="scanner-badge-thumbnail" src="" style="width: 45px; height: 45px; border-radius: 6px; object-fit: cover; border: 1.5px solid #ffffff; display: block;" />
+            <div class="batch-badge-count" id="scanner-page-count-badge" style="position: absolute; top: -8px; right: -8px; background: var(--accent-emerald, #10b981); color: #fff; font-size: 0.7rem; font-weight: 700; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">0</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview & Crop Screen -->
+    <div id="scanner-preview-screen" class="scanner-screen" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between;">
+      <div class="hud-header">
+        <span class="hud-title" style="font-size:1rem; font-weight:700;" id="preview-page-indicator">Adjust Crop Boundaries</span>
+        <button class="btn-hud-close" onclick="closeAetherScanner()">×</button>
+      </div>
+
+      <div style="flex: 1; display: flex; gap: 16px; margin: 15px 0; align-items: center; position: relative; min-height: 0;">
+        <!-- Canvas view displaying captured page with crop lines -->
+        <div style="flex: 1; height: 100%; background: #000; border-radius: 12px; position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center; border: 1.5px solid rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);">
+          <canvas id="crop-canvas" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;"></canvas>
+        </div>
+
+        <!-- Floating vertical action column on the right -->
+        <div style="display: flex; flex-direction: column; gap: 12px; width: 56px; align-items: center; flex-shrink: 0;">
+          <button class="action-column-btn" onclick="rotatePreviewPage()" title="Rotate 90°">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            <span style="font-size:0.55rem; font-weight:700; color:var(--text-secondary); margin-top:3px;">Rotate</span>
+          </button>
+          <button class="action-column-btn" onclick="retakePreviewPage()" title="Retake Snap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span style="font-size:0.55rem; font-weight:700; color:var(--text-secondary); margin-top:3px;">Retake</span>
+          </button>
+          <button class="action-column-btn" onclick="resetPreviewCrop()" title="Reset Crop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
+            <span style="font-size:0.55rem; font-weight:700; color:var(--text-secondary); margin-top:3px;">Reset</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Aspect Ratio Toolbar -->
+      <div style="display: flex; gap: 8px; justify-content: center; align-items: center; background: rgba(255,255,255,0.02); padding: 6px; border-radius: 8px; border: 1px solid var(--panel-border); margin-bottom: 12px; flex-shrink: 0;">
+        <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); margin-right: 4px;">RATIO</span>
+        <button class="chip-tab active" id="btn-aspect-free" onclick="setCropAspectLock('free')">Free</button>
+        <button class="chip-tab" id="btn-aspect-1-1" onclick="setCropAspectLock('1:1')">1:1</button>
+        <button class="chip-tab" id="btn-aspect-4-3" onclick="setCropAspectLock('4:3')">4:3</button>
+        <button class="chip-tab" id="btn-aspect-16-9" onclick="setCropAspectLock('16:9')">16:9</button>
+      </div>
+
+      <!-- Bottom controls: Thumbnails slider and review trigger -->
+      <div style="display: flex; flex-direction: column; gap: 14px; flex-shrink: 0;">
+        <!-- Thumbnail tray -->
+        <div style="display: flex; gap: 10px; overflow-x: auto; padding: 4px; scrollbar-width: none; align-items: center; -webkit-overflow-scrolling: touch;">
+          <div id="preview-thumbnails-container" style="display: flex; gap: 8px;"></div>
+          <!-- Add Page Card -->
+          <div onclick="addMorePagesToScanner()" style="flex: 0 0 60px; height: 80px; border: 2px dashed rgba(255, 255, 255, 0.2); border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: rgba(255,255,255,0.01); flex-shrink: 0;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:18px; height:18px; color:var(--text-muted);"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span style="font-size: 0.55rem; color: var(--text-muted); font-weight: 700; margin-top: 4px;">Add Page</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.75rem; color: var(--text-muted);" id="preview-status-text">Adjust document cropping circles</span>
+          <button class="btn-neon" onclick="goToReviewScreen()" style="padding: 10px 20px; font-size: 0.8rem;">Review and Edit &gt;</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Review Screen -->
+    <div id="scanner-review-screen" class="scanner-screen" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between;">
+      <div class="hud-header">
+        <span class="hud-title" style="font-size:1rem; font-weight:700;" id="review-page-indicator-title">Review Pages</span>
+        <button class="btn-hud-close" onclick="closeAetherScanner()">×</button>
+      </div>
+
+      <!-- Main Display for Selected Page -->
+      <div style="flex: 1; display: flex; justify-content: center; align-items: center; margin: 15px 0; background: #000; border-radius: 12px; border: 1px solid var(--panel-border); overflow: hidden; position: relative; min-height: 0;">
+        <img id="review-main-img" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">
+        <span style="position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; color: #fff;" id="review-current-index-label">1/2</span>
+      </div>
+
+      <!-- Actions and Finish -->
+      <div style="display: flex; flex-direction: column; gap: 14px; flex-shrink: 0;">
+        <!-- Horizontal scrollable review thumbnails -->
+        <div id="review-thumbnails-container" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch;"></div>
+
+        <!-- Filters & Page Actions Grid -->
+        <div style="display: flex; flex-direction: column; gap: 10px; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; border: 1px solid var(--panel-border); box-sizing: border-box; width: 100%;">
+          <!-- Filters selection -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Page Filter</span>
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px;" onclick="applyReviewFilter('original')">Original</button>
+              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px;" onclick="applyReviewFilter('grayscale')">Grayscale</button>
+              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px;" onclick="applyReviewFilter('color')">Color</button>
+            </div>
+          </div>
+          <!-- Edit Actions -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Edit / Manage Page</span>
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px; color: var(--accent-emerald); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.05);" onclick="adjustCropFromReview()">Adjust Crop</button>
+              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px; color: #f43f5e; border-color: rgba(244, 63, 94, 0.3); background: rgba(244, 63, 94, 0.05);" onclick="deleteReviewPage()">Delete Page</button>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-neon btn-neon-cyan" onclick="goToSaveScreen()" style="width: 100%; padding: 12px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:16px; height:16px;"><polyline points="20 6 9 17 4 12"/></svg>
+          Finish Scan Batch
+        </button>
+      </div>
+    </div>
+
+    <!-- Save Screen -->
+    <div id="scanner-save-screen" class="scanner-screen" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between;">
+      <div class="hud-header" style="margin-bottom: 15px;">
+        <span class="hud-title" style="font-size:1rem; font-weight:700;">Compile Scan Batch</span>
+        <button class="btn-hud-close" onclick="closeAetherScanner()">×</button>
+      </div>
+
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; padding-right: 4px; margin-bottom: 15px;">
+        <!-- Preview Card -->
+        <div style="display: flex; gap: 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--panel-border); border-radius: 12px; padding: 14px; align-items: center;">
+          <div style="width: 70px; height: 90px; background: #000; border-radius: 6px; border: 1px solid var(--panel-border); overflow: hidden; display: flex; justify-content: center; align-items: center; flex-shrink: 0;">
+            <img id="save-preview-img" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+            <span style="font-size:0.65rem; color:var(--text-muted); font-weight:700; text-transform:uppercase;">Document Name</span>
+            <div style="display: flex; align-items: center; gap: 6px; position: relative;">
+              <input type="text" id="save-filename-input" class="input-glass" style="padding: 6px 30px 6px 10px; font-size: 0.85rem;" value="Scan_120626_1917">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; color:var(--text-muted); position:absolute; right:10px; pointer-events:none;"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </div>
+            <span id="save-file-count-label" style="font-size:0.7rem; color:var(--text-secondary);">2 pages</span>
+          </div>
+        </div>
+
+        <!-- Format Selector -->
+        <div class="flex-col" style="gap: 8px;">
+          <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">File Type</span>
+          <div style="display: flex; gap: 10px;">
+            <div id="save-format-pdf" class="format-chip active" onclick="selectSaveFormat('PDF')" style="flex:1; text-align:center; padding:10px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.8rem; font-weight:700; transition:all 0.2s;">PDF</div>
+            <div id="save-format-photo" class="format-chip" onclick="selectSaveFormat('PHOTO')" style="flex:1; text-align:center; padding:10px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.8rem; font-weight:700; transition:all 0.2s;">Photo</div>
+          </div>
+        </div>
+
+        <!-- Size Compression Selector -->
+        <div class="flex-col" style="gap: 8px;">
+          <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">File Size</span>
+          <div style="display: flex; gap: 8px;">
+            <div id="save-size-orig" class="size-chip active" onclick="selectSaveSize('original')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Original</div>
+            <div id="save-size-med" class="size-chip" onclick="selectSaveSize('medium')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Medium</div>
+            <div id="save-size-small" class="size-chip" onclick="selectSaveSize('small')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Small</div>
+          </div>
+        </div>
+
+        <!-- Simulated OneDrive/Share locations list -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">Save Destination</span>
+          
+          <div onclick="performSaveAction('share')" style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--panel-border); cursor:pointer; transition:background 0.2s;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; color:var(--accent-cyan);"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v16"/></svg>
+              <span style="font-size: 0.8rem; font-weight:600;">Share Document</span>
+            </div>
+            <span style="font-size:0.7rem; color:var(--text-muted);">&gt;</span>
+          </div>
+
+          <div onclick="performSaveAction('onedrive')" style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--panel-border); cursor:pointer; transition:background 0.2s;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; color:var(--accent-purple);"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+              <span style="font-size: 0.8rem; font-weight:600;">Save to OneDrive</span>
+            </div>
+            <span style="font-size:0.7rem; color:var(--text-muted);">&gt;</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-neon" onclick="performSaveAction('phone')" style="width: 100%; padding: 12px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px; height:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Save to Phone (Downloads)
+      </button>
+    </div>
+
+    <!-- Creations List Screen -->
+    <div id="scanner-creations-screen" class="scanner-screen" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between;">
+      <div class="hud-header" style="margin-bottom: 15px;">
+        <span class="hud-title">My Creations</span>
+        <button class="btn-hud-close" onclick="closeAetherScanner()">×</button>
+      </div>
+
+      <!-- Scrollable list of creations -->
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; margin-bottom: 15px; padding-right: 4px;" id="creations-list-container">
+        <!-- Dyn list -->
+      </div>
+
+      <button class="btn-secondary" onclick="backToScannerCapture()" style="width: 100%; padding: 10px;">
+        &lt; Back to Scanner
+      </button>
+    </div>
+
+    <!-- Review Scan & Vector Extracting Overlay -->
+    <div id="scanner-processing-overlay" class="processing-overlay" style="display: none;">
+      <div class="glass-loader-card">
+        <div class="spinner-glass"></div>
+        <span id="scanner-processing-text" class="processing-msg">Extracting Document Vectors...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Alert Modal -->
+  <div id="error-alert-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:100000; align-items:center; justify-content:center; padding: 20px; box-sizing: border-box;">
+    <div class="glass-panel" style="width:100%; max-width:340px; padding:20px; display:flex; flex-direction:column; gap:16px; border-color:var(--accent-rose); box-shadow: 0 0 25px rgba(244,63,94,0.3); box-sizing: border-box; border-radius: 14px; background: rgba(15, 11, 25, 0.95); backdrop-filter: blur(20px);">
+      <h4 style="color:var(--accent-rose); font-weight:700; display:flex; align-items:center; gap:8px; font-size:1.05rem; margin: 0;">
+        <svg style="width: 20px; height: 20px; stroke: var(--accent-rose); fill: none; flex-shrink: 0;" viewBox="0 0 24 24" stroke-width="2.5">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+          <line x1="12" x2="12" y1="9" y2="13"/>
+          <line x1="12" x2="12" y1="17" y2="17"/>
+        </svg>
+        <span id="error-alert-title">AetherDesk Alert</span>
+      </h4>
+      <p id="error-alert-message" style="font-size:0.82rem; color:var(--text-primary); line-height:1.55; word-break:break-word; margin: 0;"></p>
+      <button class="btn-neon" style="background: linear-gradient(135deg, var(--accent-rose) 0%, #be123c 100%); color:#fff; align-self:flex-end; padding:6px 16px; font-size:0.78rem; min-height:34px; border:none; border-radius:6px; font-weight:600; cursor:pointer;" onclick="closeErrorPopup()">Dismiss</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Initialize Sortable on preview thumbnails when scanner UI is ready
+    document.addEventListener('DOMContentLoaded', function() {
+      const thumbnailContainer = document.getElementById('preview-thumbnails-container');
+      if (thumbnailContainer) {
+        new Sortable(thumbnailContainer, {
+          animation: 150,
+          onEnd: function(evt) {
+            // Call a function to reorder internal page arrays
+            if (window.reorderPagesAfterDrag) {
+              reorderPagesAfterDrag(evt.oldIndex, evt.newIndex);
+            }
+          }
+        });
+      }
+      // Android back button handling (Cordova/Capacitor environment)
+      document.addEventListener('backbutton', function(e) {
+        e.preventDefault();
+        // Assuming goBack() handles navigation back from scanner
+        if (typeof goBack === 'function') {
+          goBack();
+        }
+      }, false);
+    });
+  </script>
+</body>
+</html>
