@@ -66,7 +66,9 @@ class MainActivity : ComponentActivity() {
         // Request permissions for HTML5 webcam and audio recording
         val permissions = arrayOf(
             android.Manifest.permission.CAMERA,
-            android.Manifest.permission.RECORD_AUDIO
+            android.Manifest.permission.RECORD_AUDIO,
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE, // Added for file access
+            android.Manifest.permission.READ_EXTERNAL_STORAGE  // Added for file access
         )
         val permissionsToRequest = permissions.filter {
             checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
