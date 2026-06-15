@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
                     webView.clearCache(true)
                     webView.settings.javaScriptEnabled = true
                     webView.settings.domStorageEnabled = true
+                    webView.settings.databaseEnabled = true
                     webView.settings.allowFileAccess = true
                     webView.settings.allowContentAccess = true
                     webView.settings.mediaPlaybackRequiresUserGesture = false
