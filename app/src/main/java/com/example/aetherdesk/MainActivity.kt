@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     var filePathCallback: ValueCallback<Array<Uri>>? = null
@@ -108,7 +111,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     webView.addJavascriptInterface(AndroidBridge(this@MainActivity), "AndroidBridge")
-                    webView.loadUrl("file:///android_asset/www/index.html")
+                    CoroutineScope(Dispatchers.Main).launch {
+                        webView.loadUrl("file:///android_asset/www/index.html")
+                    }
                 }
             )
         }
