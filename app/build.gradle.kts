@@ -28,7 +28,7 @@ android {
     buildFeatures {
         compose = true
         aidl = false
-        buildConfig = true // Changed to true for easier version/debug management
+        buildConfig = true
         shaders = false
     }
 
@@ -53,8 +53,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
 
-    // CameraX Dependencies (New)
-    val camerax_version = "1.4.0-alpha04"
+    // CameraX Dependencies (Updated to stable 1.4.1)
+    val camerax_version = "1.4.1"
     implementation("androidx.camera:camera-core:${camerax_version}")
     implementation("androidx.camera:camera-camera2:${camerax_version}")
     implementation("androidx.camera:camera-lifecycle:${camerax_version}")
@@ -76,11 +76,11 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // Local tests: jUnit, coroutines, Android runner
+    // Local tests
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 
-    // Instrumented tests: jUnit rules and runners
+    // Instrumented tests
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

@@ -3,10 +3,12 @@ package com.example.aetherdesk
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -19,6 +21,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.IOException
 
 class MainActivity : ComponentActivity() {
     var filePathCallback: ValueCallback<Array<Uri>>? = null
@@ -63,14 +66,22 @@ class MainActivity : ComponentActivity() {
             }
         })
 
-        // Request permissions for HTML5 webcam and audio recording
-        val permissions = arrayOf(
+        // Filter permissions based on running Android version to comply with API 36 rules
+        val permissionsList = mutableListOf(
             android.Manifest.permission.CAMERA,
-            android.Manifest.permission.RECORD_AUDIO,
-            android.Manifest.permission.WRITE_EXTERNAL_STORAGE, // Added for file access
-            android.Manifest.permission.READ_EXTERNAL_STORAGE  // Added for file access
+            android.Manifest.permission.RECORD_AUDIO
         )
-        val permissionsToRequest = permissions.filter {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsList.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            @Suppress("DEPRECATION")
+            permissionsList.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            @Suppress("DEPRECATION")
+            permissionsList.add(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+
+        val permissionsToRequest = permissionsList.filter {
             checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
         }
         if (permissionsToRequest.isNotEmpty()) {
@@ -84,14 +95,48 @@ class MainActivity : ComponentActivity() {
                     this@MainActivity.myWebView = webView
                     WebView.setWebContentsDebuggingEnabled(true)
                     webView.clearCache(true)
+
+                    // Core Web Configurations
                     webView.settings.javaScriptEnabled = true
                     webView.settings.domStorageEnabled = true
                     webView.settings.databaseEnabled = true
-                    webView.settings.allowFileAccess = true
-                    webView.settings.allowContentAccess = true
                     webView.settings.mediaPlaybackRequiresUserGesture = false
-                    
-                    webView.webViewClient = WebViewClient()
+
+                    // API 36 Security Hardening: Turn off direct raw file access flags to satisfy Oplus controllers
+                    webView.settings.allowFileAccess = false
+                    webView.settings.allowContentAccess = false
+
+                    // Intercept local asset loading and tunnel them safely through a virtual secure domain
+                    webView.webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView,
+                            url: String
+                        ): WebResourceResponse? {
+                            val targetPrefix = "https://appassets.androidplatform.net/assets/www/"
+                            if (url.startsWith(targetPrefix)) {
+                                val assetPath = "www/" + url.substring(targetPrefix.length)
+                                // Standardize structural parameter lookups by cleaning query bounds
+                                val cleanAssetPath = assetPath.substringBefore("?").substringBefore("#")
+
+                                return try {
+                                    val mimeType = when {
+                                        cleanAssetPath.endsWith(".html") -> "text/html"
+                                        cleanAssetPath.endsWith(".js") -> "application/javascript"
+                                        cleanAssetPath.endsWith(".css") -> "text/css"
+                                        cleanAssetPath.endsWith(".png") -> "image/png"
+                                        cleanAssetPath.endsWith(".jpg") || cleanAssetPath.endsWith(".jpeg") -> "image/jpeg"
+                                        cleanAssetPath.endsWith(".svg") -> "image/svg+xml"
+                                        else -> "text/plain"
+                                    }
+                                    WebResourceResponse(mimeType, "UTF-8", assets.open(cleanAssetPath))
+                                } catch (e: IOException) {
+                                    null
+                                }
+                            }
+                            return super.shouldInterceptRequest(view, url)
+                        }
+                    }
+
                     webView.webChromeClient = object : WebChromeClient() {
                         override fun onPermissionRequest(request: PermissionRequest) {
                             request.grant(request.resources)
@@ -113,9 +158,12 @@ class MainActivity : ComponentActivity() {
                             return true
                         }
                     }
+
                     webView.addJavascriptInterface(AndroidBridge(this@MainActivity), "AndroidBridge")
+
                     CoroutineScope(Dispatchers.Main).launch {
-                        webView.loadUrl("file:///android_asset/www/index.html")
+                        // Point directly into the newly constructed, policy-compliant domain space
+                        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
                     }
                 }
             )

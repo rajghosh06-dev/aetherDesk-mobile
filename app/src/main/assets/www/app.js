@@ -3401,11 +3401,12 @@ function closeAetherScanner() {
   const video = document.getElementById("scanner-camera-feed");
   if (video) {
     video.srcObject = null;
-  }
-  if (window.AndroidBridge && typeof AndroidBridge.setStatusBarTheme === "function") {
-    AndroidBridge.setStatusBarTheme(false);
-  }
     video.style.display = "none";
+  }
+  // Restore status bar theme when leaving scanner
+  const savedTheme = localStorage.getItem("theme") || "light";
+  if (window.AndroidBridge && typeof AndroidBridge.setStatusBarTheme === "function") {
+    AndroidBridge.setStatusBarTheme(savedTheme);
   }
 }
 
