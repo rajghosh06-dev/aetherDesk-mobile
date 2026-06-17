@@ -1,19 +1,19 @@
 package com.example.aetherdesk
 
+import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.webkit.PermissionRequest
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.webkit.*
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -24,33 +24,20 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 
 class MainActivity : ComponentActivity() {
-    var filePathCallback: ValueCallback<Array<Uri>>? = null
-    val fileChooserRequestCode = 1
-    var myWebView: WebView? = null
-
-    fun setStatusBarTheme(isDark: Boolean) {
-        val statusStyle = if (isDark) {
-            androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-        } else {
-            androidx.activity.SystemBarStyle.light(
-                android.graphics.Color.TRANSPARENT,
-                android.graphics.Color.TRANSPARENT
-            )
-        }
-        enableEdgeToEdge(
-            statusBarStyle = statusStyle,
-            navigationBarStyle = statusStyle
-        )
-    }
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private val fileChooserRequestCode = 1
+    private var myWebView: WebView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
 
-        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+        // Initial edge-to-edge setup.
+        // Using light/dark scrims depending on preferred appearance.
+        setStatusBarTheme(isDark = false)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val webView = myWebView
-                if (webView != null) {
+                myWebView?.let { webView ->
                     webView.evaluateJavascript("if (typeof window.handleAndroidBack === 'function') window.handleAndroidBack(); else false;") { result ->
                         if (result == "false" || result == "null") {
                             isEnabled = false
@@ -58,7 +45,7 @@ class MainActivity : ComponentActivity() {
                             isEnabled = true
                         }
                     }
-                } else {
+                } ?: run {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                     isEnabled = true
@@ -66,72 +53,41 @@ class MainActivity : ComponentActivity() {
             }
         })
 
-        // Filter permissions based on running Android version to comply with API 36 rules
-        val permissionsList = mutableListOf(
-            android.Manifest.permission.CAMERA,
-            android.Manifest.permission.RECORD_AUDIO
-        )
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionsList.add(android.Manifest.permission.READ_MEDIA_IMAGES)
-        } else {
-            @Suppress("DEPRECATION")
-            permissionsList.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-            @Suppress("DEPRECATION")
-            permissionsList.add(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
-
-        val permissionsToRequest = permissionsList.filter {
-            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
-        }
-        if (permissionsToRequest.isNotEmpty()) {
-            requestPermissions(permissionsToRequest.toTypedArray(), 100)
-        }
+        requestRequiredPermissions()
 
         setContent {
             WebViewScreen(
                 modifier = Modifier.fillMaxSize(),
                 onSetup = { webView ->
-                    this@MainActivity.myWebView = webView
+                    this.myWebView = webView
                     WebView.setWebContentsDebuggingEnabled(true)
                     webView.clearCache(true)
 
-                    // Core Web Configurations
-                    webView.settings.javaScriptEnabled = true
-                    webView.settings.domStorageEnabled = true
-                    webView.settings.databaseEnabled = true
-                    webView.settings.mediaPlaybackRequiresUserGesture = false
+                    with(webView.settings) {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        databaseEnabled = true
+                        mediaPlaybackRequiresUserGesture = false
+                        allowFileAccess = false
+                        allowContentAccess = false
+                    }
 
-                    // API 36 Security Hardening: Turn off direct raw file access flags to satisfy Oplus controllers
-                    webView.settings.allowFileAccess = false
-                    webView.settings.allowContentAccess = false
-
-                    // Intercept local asset loading and tunnel them safely through a virtual secure domain
                     webView.webViewClient = object : WebViewClient() {
-                        override fun shouldInterceptRequest(
-                            view: WebView,
-                            url: String
-                        ): WebResourceResponse? {
+                        override fun shouldInterceptRequest(view: WebView, url: String): WebResourceResponse? {
                             val targetPrefix = "https://appassets.androidplatform.net/assets/www/"
                             if (url.startsWith(targetPrefix)) {
-                                val assetPath = "www/" + url.substring(targetPrefix.length)
-                                // Standardize structural parameter lookups by cleaning query bounds
-                                val cleanAssetPath = assetPath.substringBefore("?").substringBefore("#")
-
+                                val assetPath = "www/" + url.substring(targetPrefix.length).substringBefore("?").substringBefore("#")
                                 return try {
                                     val mimeType = when {
-                                        cleanAssetPath.endsWith(".html") -> "text/html"
-                                        cleanAssetPath.endsWith(".js") -> "application/javascript"
-                                        cleanAssetPath.endsWith(".css") -> "text/css"
-                                        cleanAssetPath.endsWith(".png") -> "image/png"
-                                        cleanAssetPath.endsWith(".jpg") || cleanAssetPath.endsWith(".jpeg") -> "image/jpeg"
-                                        cleanAssetPath.endsWith(".svg") -> "image/svg+xml"
-                                        else -> "text/plain"
+                                        assetPath.endsWith(".html") -> "text/html"
+                                        assetPath.endsWith(".js") -> "application/javascript"
+                                        assetPath.endsWith(".css") -> "text/css"
+                                        assetPath.endsWith(".png") -> "image/png"
+                                        assetPath.endsWith(".svg") -> "image/svg+xml"
+                                        else -> "application/octet-stream"
                                     }
-                                    WebResourceResponse(mimeType, "UTF-8", assets.open(cleanAssetPath))
-                                } catch (e: IOException) {
-                                    null
-                                }
+                                    WebResourceResponse(mimeType, "UTF-8", assets.open(assetPath))
+                                } catch (e: IOException) { null }
                             }
                             return super.shouldInterceptRequest(view, url)
                         }
@@ -143,16 +99,15 @@ class MainActivity : ComponentActivity() {
                         }
                         override fun onShowFileChooser(
                             webView: WebView,
-                            filePathCallback: ValueCallback<Array<Uri>>,
-                            fileChooserParams: FileChooserParams
+                            callback: ValueCallback<Array<Uri>>,
+                            params: FileChooserParams
                         ): Boolean {
-                            this@MainActivity.filePathCallback?.onReceiveValue(null)
-                            this@MainActivity.filePathCallback = filePathCallback
-                            val intent = fileChooserParams.createIntent()
+                            filePathCallback?.onReceiveValue(null)
+                            filePathCallback = callback
                             try {
-                                startActivityForResult(intent, fileChooserRequestCode)
+                                startActivityForResult(params.createIntent(), fileChooserRequestCode)
                             } catch (e: ActivityNotFoundException) {
-                                this@MainActivity.filePathCallback = null
+                                filePathCallback = null
                                 return false
                             }
                             return true
@@ -160,22 +115,41 @@ class MainActivity : ComponentActivity() {
                     }
 
                     webView.addJavascriptInterface(AndroidBridge(this@MainActivity), "AndroidBridge")
-
-                    CoroutineScope(Dispatchers.Main).launch {
-                        // Point directly into the newly constructed, policy-compliant domain space
-                        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
-                    }
+                    webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
                 }
             )
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+    fun setStatusBarTheme(isDark: Boolean) {
+        val style = if (isDark) {
+            SystemBarStyle.dark(Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+    }
+
+    private fun requestRequiredPermissions() {
+        val permissions = mutableListOf(
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.RECORD_AUDIO
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+        } else {
+            @Suppress("DEPRECATION")
+            permissions.addAll(listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE))
+        }
+
+        val toRequest = permissions.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (toRequest.isNotEmpty()) requestPermissions(toRequest.toTypedArray(), 100)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == fileChooserRequestCode) {
-            if (filePathCallback == null) return
-            val results = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
-            filePathCallback?.onReceiveValue(results)
+            filePathCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
             filePathCallback = null
         }
     }
@@ -183,12 +157,5 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun WebViewScreen(modifier: Modifier = Modifier, onSetup: (WebView) -> Unit) {
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            WebView(context).apply {
-                onSetup(this)
-            }
-        }
-    )
+    AndroidView(modifier = modifier, factory = { context -> WebView(context).apply(onSetup) })
 }

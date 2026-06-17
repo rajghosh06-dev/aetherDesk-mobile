@@ -519,11 +519,11 @@ function switchTab(tabId) {
 
   // Lazy initialize touch canvas when the tab is rendered
   if (tabId === "creative") {
-    setTimeout(initWidgetCanvas, 100);
+      setTimeout(initWidgetCanvas, 100);
   } else if (tabId === "performance") {
-    setTimeout(() => {
-      selectTelemetryResource(currentTelemetryResource);
-    }, 100);
+      setTimeout(() => {
+        selectTelemetryResource(currentTelemetryResource);
+      }, 100);
   }
 }
 
