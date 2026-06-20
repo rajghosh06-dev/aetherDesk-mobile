@@ -10,7 +10,15 @@ const MODELS = [
 
 function getDownloadedModels() {
   const data = localStorage.getItem('downloadedModels');
-  return data ? JSON.parse(data) : {};
+  if (!data) return {};
+
+  try {
+    return JSON.parse(data);
+  } catch (error) {
+    console.warn('Corrupted downloadedModels data cleared from localStorage:', error);
+    localStorage.removeItem('downloadedModels');
+    return {};
+  }
 }
 
 function saveDownloadedModels(data) {
@@ -18,7 +26,8 @@ function saveDownloadedModels(data) {
 }
 
 function renderModelList() {
-  const grid = document.getElementById('model-grid');
+  const grid = document.getElementById('model-manager-list-container');
+  if (!grid) return;
   grid.innerHTML = '';
   const downloaded = getDownloadedModels();
 
@@ -83,7 +92,14 @@ function downloadModel(id) {
       delete window[`onDownloadComplete_${id}`];
     };
 
-    window.AndroidBridge.startDownload(model.url, `${id}.bin`, `onDownloadProgress_${id}`, `onDownloadComplete_${id}`);
+    try {
+      window.AndroidBridge.startDownload(model.url, `${id}.bin`, `onDownloadProgress_${id}`, `onDownloadComplete_${id}`);
+    } catch (e) {
+      console.error("Native download failed to start:", e);
+      if (statusText) statusText.textContent = 'Download failed to start.';
+      if (btn) btn.style.display = 'block';
+      if (progCont) progCont.style.display = 'none';
+    }
   } else {
     // Simulated Download for Web / iOS fallback
     let progress = 0;

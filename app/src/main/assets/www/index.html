@@ -5,8 +5,7 @@
   <title>AetherDesk Mobile</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <link rel="stylesheet" href="style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
-  
+  <!-- <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet"> offline capability -->
   <style>
     /* Critical FOUC preventer: ensures splash is opaque immediately */
     #boot-splash-overlay {
@@ -1174,19 +1173,19 @@
           <div class="resource-detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid var(--panel-border); padding-top: 12px;">
             <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
               <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec1-label">Processor</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); word-break: break-word; overflow-wrap: break-word;" id="telemetry-spec1-val">Snapdragon 8 Gen 3</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); word-break: break-word; overflow-wrap: break-word;" id="telemetry-spec1-val">--</span>
             </div>
             <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
               <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec2-label">Cores</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec2-val">8 Cores (1+5+2)</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec2-val">--</span>
             </div>
             <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec3-label">Clock Speed</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec3-val">3.30 GHz</span>
+              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec3-label">Device</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec3-val">--</span>
             </div>
             <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec4-label">Processes</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec4-val">120 Active</span>
+              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec4-label">Hardware</span>
+              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec4-val">--</span>
             </div>
           </div>
         </div>
@@ -1500,6 +1499,7 @@
       
       <!-- Real Camera Feed (fullscreen background) -->
       <video id="scanner-camera-feed" autoplay playsinline muted style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; z-index: 1;"></video>
+      <canvas id="scanner-tracking-canvas" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none !important;"></canvas>
       
       <!-- Simulated Document Sheet under Viewfinder -->
       <div id="simulated-document-target" class="document-sheet" style="z-index: 2;">
@@ -1781,8 +1781,9 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-  <script src="app.js"></script>
+  <script src="lib/sortable.min.js" defer></script>
+  <script src="model-manager.js" defer></script>
+  <script src="app.js" defer></script>
   <script>
     // Initialize Sortable on preview thumbnails when scanner UI is ready
     document.addEventListener('DOMContentLoaded', function() {

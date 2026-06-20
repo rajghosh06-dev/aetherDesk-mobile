@@ -21,6 +21,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.json.JSONArray
 import java.io.IOException
 
 class MainActivity : ComponentActivity() {
@@ -69,7 +70,7 @@ class MainActivity : ComponentActivity() {
                         databaseEnabled = true
                         mediaPlaybackRequiresUserGesture = false
                         allowFileAccess = false
-                        allowContentAccess = false
+                        allowContentAccess = true
                     }
 
                     webView.webViewClient = object : WebViewClient() {
@@ -91,11 +92,39 @@ class MainActivity : ComponentActivity() {
                             }
                             return super.shouldInterceptRequest(view, url)
                         }
+
+                        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                            super.onReceivedError(view, request, error)
+                            view?.evaluateJavascript("console.error('WebView Error: ${error?.description}');", null)
+                        }
+
+                        override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
+                            super.onReceivedHttpError(view, request, errorResponse)
+                            view?.evaluateJavascript("console.error('WebView HTTP Error: ${errorResponse?.statusCode}');", null)
+                        }
+
+                        override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: android.net.http.SslError?) {
+                            super.onReceivedSslError(view, handler, error)
+                            handler?.cancel()
+                            view?.evaluateJavascript("console.error('WebView SSL Error');", null)
+                        }
                     }
 
                     webView.webChromeClient = object : WebChromeClient() {
                         override fun onPermissionRequest(request: PermissionRequest) {
-                            request.grant(request.resources)
+                            val grantedPermissions = mutableListOf<String>()
+                            for (resource in request.resources) {
+                                if (resource == PermissionRequest.RESOURCE_VIDEO_CAPTURE && checkSelfPermission(android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                    grantedPermissions.add(resource)
+                                } else if (resource == PermissionRequest.RESOURCE_AUDIO_CAPTURE && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                    grantedPermissions.add(resource)
+                                }
+                            }
+                            if (grantedPermissions.isNotEmpty()) {
+                                request.grant(grantedPermissions.toTypedArray())
+                            } else {
+                                request.deny()
+                            }
                         }
                         override fun onShowFileChooser(
                             webView: WebView,
@@ -107,10 +136,24 @@ class MainActivity : ComponentActivity() {
                             try {
                                 startActivityForResult(params.createIntent(), fileChooserRequestCode)
                             } catch (e: ActivityNotFoundException) {
+                                filePathCallback?.onReceiveValue(null)
                                 filePathCallback = null
+                                webView.evaluateJavascript("console.error('File chooser failed: ActivityNotFound');", null)
                                 return false
                             }
                             return true
+                        }
+                        
+                        override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                            consoleMessage?.let {
+                                val logMessage = "${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}"
+                                if (it.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                                    android.util.Log.e("WebViewConsole", logMessage)
+                                } else {
+                                    android.util.Log.d("WebViewConsole", logMessage)
+                                }
+                            }
+                            return super.onConsoleMessage(consoleMessage)
                         }
                     }
 
@@ -146,12 +189,29 @@ class MainActivity : ComponentActivity() {
         if (toRequest.isNotEmpty()) requestPermissions(toRequest.toTypedArray(), 100)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 100) {
+            val denied = permissions.filterIndexed { index, _ -> grantResults[index] != PackageManager.PERMISSION_GRANTED }
+            if (denied.isNotEmpty()) {
+                val deniedJson = JSONArray(denied).toString()
+                myWebView?.evaluateJavascript("if (typeof window.onPermissionsDenied === 'function') window.onPermissionsDenied($deniedJson); else console.error('Permissions denied: $deniedJson');", null)
+            }
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == fileChooserRequestCode) {
             filePathCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
             filePathCallback = null
         }
+    }
+
+    override fun onDestroy() {
+        myWebView?.destroy()
+        myWebView = null
+        super.onDestroy()
     }
 }
 

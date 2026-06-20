@@ -159,6 +159,15 @@ if (document.readyState === "complete" || document.readyState === "interactive")
   });
 }
 
+// Frontend Failsafe to bypass boot splash screen if JS crashes
+setTimeout(() => {
+  const overlay = document.getElementById("boot-splash-overlay");
+  if (overlay) {
+    overlay.style.display = "none";
+    overlay.style.opacity = "0";
+  }
+}, 3000);
+
 // Boot Splash Screen Animation (Task-Manager style splash sequence)
 function runBootSplash() {
   const overlay = document.getElementById("boot-splash-overlay");
@@ -209,14 +218,18 @@ function runBootSplash() {
       overlay.style.display = "none";
       console.log("runBootSplash: overlay display set to none");
       
+      // FIX: Always remove booting class FIRST — ensures all interactive elements are clickable
+      // regardless of whether the user needs to go through onboarding or not.
+      document.body.classList.remove("booting");
+      
       const onboardingComplete = localStorage.getItem("onboarding_complete") === "true";
       if (!onboardingComplete) {
         showOnboarding();
-      } else {
-        document.body.classList.remove("booting");
       }
     }, 450);
   }, 1550);
+  // Absolute safety net: strip booting class after 3s regardless of race conditions
+  setTimeout(() => document.body.classList.remove("booting"), 3000);
 }
 
 function showOnboarding() {
@@ -1117,11 +1130,12 @@ window.closeErrorPopup = closeErrorPopup;
 
 function downloadBase64File(base64Data, filename) {
   if (window.AndroidBridge && window.AndroidBridge.saveFileToDownloads) {
-    const res = window.AndroidBridge.saveFileToDownloads(filename, base64Data);
-    if (res.startsWith("Error")) {
-      alert("Failed to save file: " + res);
-    } else {
-      addNotification(`Saved to Downloads: ${filename}`, "success");
+    try {
+      const resObj = JSON.parse(window.AndroidBridge.saveFileToDownloads(filename, base64Data));
+      if (!resObj.ok) throw new Error(resObj.error);
+      addNotification("Saved successfully to Downloads!", "success");
+    } catch (e) {
+      addNotification("Failed to save: " + e.message, "error");
     }
   } else {
     const link = document.createElement("a");
@@ -1457,10 +1471,14 @@ async function ingestPdfDocument() {
           bar.style.width = "75%";
           
           setTimeout(async () => {
-            try {
-              const text = window.AndroidBridge.extractTextFromPdf(base64);
-              if (text.startsWith("Error")) {
-                throw new Error(text);
+                 try {
+                const resObj = JSON.parse(window.AndroidBridge.extractTextFromPdf(base64));
+                if (!resObj.ok) throw new Error(resObj.error);
+                let existingContent = editor.value;
+                editor.value = existingContent + (existingContent ? "\n\n" : "") + resObj.text;
+                addNotification("PDF OCR completed successfully", "success");
+              } catch (e) {
+                addNotification("PDF OCR failed: " + e.message, "error");
               }
               
               try {
@@ -1483,10 +1501,6 @@ async function ingestPdfDocument() {
               bar.style.width = "100%";
               setTimeout(() => { barContainer.style.display = "none"; }, 1000);
               loadIngestedDocuments();
-            } catch (err) {
-              status.textContent = "OCR failed: " + err.message;
-              bar.style.width = "0%";
-            }
           }, 50);
         } catch (e2) {
           status.textContent = "Read failed: " + e2.message;
@@ -1672,9 +1686,14 @@ async function extractOcrText() {
     // Check if running on Android and native OCR is available
     if (window.AndroidBridge && window.AndroidBridge.extractTextFromBase64 && base64Data) {
       statusMsg.textContent = "Running native, on-device OCR...";
-      ocrText = window.AndroidBridge.extractTextFromBase64(base64Data);
-      if (ocrText.startsWith("Offline OCR failed:")) {
-        throw new Error(ocrText);
+      try {
+        const resObj = JSON.parse(window.AndroidBridge.extractTextFromBase64(base64Data));
+        if (!resObj.ok) throw new Error(resObj.error);
+        ocrText = resObj.text;
+        console.log("Offline OCR succeeded natively.");
+      } catch (e) {
+        ocrText = e.message;
+        console.log("Native OCR returned error:", ocrText);
       }
       isNative = true;
     } else {
@@ -1728,7 +1747,15 @@ async function saveOcrTextToDb() {
     let savedPath = "";
     if (window.AndroidBridge && window.AndroidBridge.saveNoteFile) {
       // Save notes natively to scoped storage
-      savedPath = window.AndroidBridge.saveNoteFile(filename, text);
+      try {
+        const resObj = JSON.parse(window.AndroidBridge.saveNoteFile(filename, text));
+        if (!resObj.ok) throw new Error(resObj.error);
+        savedPath = resObj.path;
+        console.log("Note saved securely:", savedPath);
+      } catch (e) {
+        savedPath = "Error: " + e.message;
+        console.error("Failed to save note:", savedPath);
+      }
     }
     
     const res = await apiRequest("/api/qa/documents/ingest-text", "POST", {
@@ -2652,14 +2679,17 @@ async function runPdfCompression() {
       status.textContent = "Compressing PDF bytes natively...";
       setTimeout(() => {
         const base64 = reader.result;
-        const compressedBase64 = window.AndroidBridge.compressPdf(base64, window.compressSelectedFile.name, quality);
-        if (compressedBase64.startsWith("Error")) {
-          status.textContent = "Compression failed: " + compressedBase64;
+        try {
+          const resObj = JSON.parse(window.AndroidBridge.compressPdf(base64, window.compressSelectedFile.name, quality));
+          if (!resObj.ok) throw new Error(resObj.error);
+          status.textContent = "Compression finished securely.";
+          const link = document.createElement("a");
+          link.href = resObj.data;
+          link.download = window.compressSelectedFile.name.replace('.pdf', '_compressed.pdf');
+          link.click();
+        } catch (e) {
+          status.textContent = "Compression failed: " + e.message;
           status.style.color = "var(--accent-rose)";
-        } else {
-          status.textContent = `PDF Compressed successfully!`;
-          status.style.color = "var(--accent-emerald)";
-          downloadBase64File(compressedBase64, "compressed_" + window.compressSelectedFile.name);
         }
       }, 50);
     };
@@ -3000,38 +3030,50 @@ function drawCropScreen() {
     
     ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
     
-    // Draw polygon crop boundaries
-    ctx.fillStyle = "rgba(16, 185, 129, 0.15)";
-    ctx.strokeStyle = "var(--accent-emerald)";
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([6, 4]);
-    
+    // Dark surround mask outside the crop polygon (M365 style)
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = "destination-out";
     ctx.beginPath();
     ctx.moveTo(cropHandles[0].x, cropHandles[0].y);
     ctx.lineTo(cropHandles[1].x, cropHandles[1].y);
     ctx.lineTo(cropHandles[2].x, cropHandles[2].y);
     ctx.lineTo(cropHandles[3].x, cropHandles[3].y);
     ctx.closePath();
+    ctx.fillStyle = "rgba(0,0,0,1)";
     ctx.fill();
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.restore();
     
-    // Draw draggable crop handle circles
+    // Crisp white polygon border (M365 style — no emerald, no fill)
+    ctx.beginPath();
+    ctx.moveTo(cropHandles[0].x, cropHandles[0].y);
+    ctx.lineTo(cropHandles[1].x, cropHandles[1].y);
+    ctx.lineTo(cropHandles[2].x, cropHandles[2].y);
+    ctx.lineTo(cropHandles[3].x, cropHandles[3].y);
+    ctx.closePath();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.stroke();
+    
+    // White draggable corner handles: outer glow ring + solid white dot
     cropHandles.forEach((handle, idx) => {
+      const isActive = idx === activeDragHandle;
+      // Outer translucent ring
       ctx.beginPath();
-      ctx.arc(handle.x, handle.y, 9, 0, 2 * Math.PI);
-      ctx.fillStyle = "#ffffff";
+      ctx.arc(handle.x, handle.y, isActive ? 18 : 14, 0, 2 * Math.PI);
+      ctx.fillStyle = isActive ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)";
       ctx.fill();
-      ctx.strokeStyle = "var(--accent-emerald)";
-      ctx.lineWidth = 3.5;
-      ctx.stroke();
-      
+      // Inner solid white circle
       ctx.beginPath();
-      ctx.arc(handle.x, handle.y, 3.5, 0, 2 * Math.PI);
-      ctx.fillStyle = "var(--accent-emerald)";
+      ctx.arc(handle.x, handle.y, isActive ? 8 : 6.5, 0, 2 * Math.PI);
+      ctx.fillStyle = "#ffffff";
       ctx.fill();
     });
   };
+
   
   if (cachedCropImage && cachedCropImageSrc === currentSrc) {
     render(cachedCropImage);
@@ -3205,7 +3247,219 @@ function bindInteractiveCropEvents() {
   canvas.addEventListener("touchend", onEnd);
 }
 
+// ── Live Edge Detection Loop (Web Worker + EMA Smoothed Canvas Overlay) ──────────
+let _scannerEdgeWorker = null;
+let _scannerEdgeDetectionBusy = false;
+let _scannerLastEdges = null;    // normalized [0..1] coordinates from worker
+let _scannerSmoothedEdges = null; // EMA-smoothed for rendering
+let _scannerStability = 0;
+let _scannerRafId = null;        // render loop rAF handle
+let _scannerDetectRafId = null;  // detection loop rAF handle
+let _scannerEdgeLoopActive = false;
+
+function _createEdgeWorkerBlobUrl() {
+  const src = `
+    self.onmessage = function(e) {
+      var pixels = e.data.pixels, w = e.data.width, h = e.data.height;
+      var minX=w, minY=h, maxX=0, maxY=0, hits=0, sum=0, len=pixels.length;
+      for (var i=0; i<len; i+=4) sum+=(pixels[i]+pixels[i+1]+pixels[i+2])/3;
+      var avg=sum/(len/4), thr=Math.max(70,Math.min(210,avg+24));
+      for (var y=2; y<h-2; y+=2) {
+        for (var x=2; x<w-2; x+=2) {
+          var idx=(y*w+x)*4;
+          var luma=pixels[idx]*0.299+pixels[idx+1]*0.587+pixels[idx+2]*0.114;
+          if (luma>thr){if(x<minX)minX=x;if(y<minY)minY=y;if(x>maxX)maxX=x;if(y>maxY)maxY=y;hits++;}
+        }
+      }
+      if (hits<80||maxX-minX<w*0.22||maxY-minY<h*0.22){minX=w*0.16;minY=h*0.14;maxX=w*0.84;maxY=h*0.86;}
+      var padX=Math.min(w*0.035,12), padY=Math.min(h*0.035,12);
+      self.postMessage([
+        {x:Math.max(0,minX-padX)/w,y:Math.max(0,minY-padY)/h},
+        {x:Math.min(1,(maxX+padX)/w),y:Math.max(0,minY-padY)/h},
+        {x:Math.min(1,(maxX+padX)/w),y:Math.min(1,(maxY+padY)/h)},
+        {x:Math.max(0,minX-padX)/w,y:Math.min(1,(maxY+padY)/h)}
+      ]);
+    };
+  `;
+  try {
+    const blob = new Blob([src], { type: 'application/javascript' });
+    return URL.createObjectURL(blob);
+  } catch(e) { return null; }
+}
+
+function startEdgeDetectionLoop() {
+  if (_scannerEdgeLoopActive) return;
+  _scannerEdgeLoopActive = true;
+  _scannerStability = 0;
+  _scannerSmoothedEdges = null;
+  _scannerLastEdges = null;
+
+  const video = document.getElementById("scanner-camera-feed");
+  const canvas = document.getElementById("scanner-tracking-canvas");
+  if (!canvas) return;
+
+  // Create Web Worker
+  const workerUrl = _createEdgeWorkerBlobUrl();
+  if (workerUrl) {
+    _scannerEdgeWorker = new Worker(workerUrl);
+    URL.revokeObjectURL(workerUrl);
+    _scannerEdgeWorker.onmessage = (e) => {
+      _scannerLastEdges = e.data;
+      _scannerEdgeDetectionBusy = false;
+    };
+    _scannerEdgeWorker.onerror = () => { _scannerEdgeDetectionBusy = false; };
+  }
+
+  const detCanvas = document.createElement("canvas");
+  const detCtx = detCanvas.getContext("2d", { willReadFrequently: true });
+  let lastDetectionTime = 0;
+
+  // Detection sub-loop (throttled, off-main-thread via Worker)
+  const detectionLoop = (ts) => {
+    if (!_scannerEdgeLoopActive) return;
+    _scannerDetectRafId = requestAnimationFrame(detectionLoop);
+    if (ts - lastDetectionTime < 200 || _scannerEdgeDetectionBusy) return;
+    if (!video || video.readyState < 2 || !video.srcObject || video.paused) return;
+    const vW = video.videoWidth, vH = video.videoHeight;
+    if (!vW || !vH) return;
+    const scale = Math.min(280 / vW, 280 / vH, 1);
+    const dW = Math.max(1, Math.round(vW * scale));
+    const dH = Math.max(1, Math.round(vH * scale));
+    detCanvas.width = dW; detCanvas.height = dH;
+    detCtx.drawImage(video, 0, 0, dW, dH);
+    _scannerEdgeDetectionBusy = true;
+    try {
+      const imgData = detCtx.getImageData(0, 0, dW, dH);
+      if (_scannerEdgeWorker) {
+        _scannerEdgeWorker.postMessage({ pixels: imgData.data, width: dW, height: dH }, [imgData.data.buffer]);
+      } else {
+        // Inline fallback if Worker creation failed
+        _scannerLastEdges = null;
+        _scannerEdgeDetectionBusy = false;
+      }
+    } catch(e) { _scannerEdgeDetectionBusy = false; }
+    lastDetectionTime = ts;
+  };
+  _scannerDetectRafId = requestAnimationFrame(detectionLoop);
+
+  // Render loop (60fps, main thread only — draws EMA-smoothed white bracket overlay)
+  const renderLoop = () => {
+    if (!_scannerEdgeLoopActive) return;
+    _scannerRafId = requestAnimationFrame(renderLoop);
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
+      canvas.width = Math.floor(rect.width);
+      canvas.height = Math.floor(rect.height);
+    }
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const fallback = [
+      { x: 0.12, y: 0.12 }, { x: 0.88, y: 0.12 },
+      { x: 0.88, y: 0.88 }, { x: 0.12, y: 0.88 }
+    ];
+    const target = _scannerLastEdges || fallback;
+
+    if (!_scannerSmoothedEdges) {
+      _scannerSmoothedEdges = target.map(pt => ({ ...pt }));
+    } else {
+      const ALPHA = 0.12; // Lower = smoother but slower to respond
+      for (let i = 0; i < 4; i++) {
+        _scannerSmoothedEdges[i].x += (target[i].x - _scannerSmoothedEdges[i].x) * ALPHA;
+        _scannerSmoothedEdges[i].y += (target[i].y - _scannerSmoothedEdges[i].y) * ALPHA;
+      }
+    }
+
+    // Compute stability score
+    if (_scannerLastEdges) {
+      let diff = 0;
+      for (let i = 0; i < 4; i++) {
+        diff += Math.hypot(
+          _scannerLastEdges[i].x - _scannerSmoothedEdges[i].x,
+          _scannerLastEdges[i].y - _scannerSmoothedEdges[i].y
+        );
+      }
+      _scannerStability = diff < 0.025
+        ? Math.min(1.0, _scannerStability + 0.025)
+        : Math.max(0.0, _scannerStability - 0.12);
+    } else {
+      _scannerStability = Math.max(0.0, _scannerStability - 0.04);
+    }
+
+    const p = _scannerSmoothedEdges.map(pt => ({
+      x: pt.x * canvas.width,
+      y: pt.y * canvas.height
+    }));
+
+    // Dark vignette outside document
+    ctx.fillStyle = "rgba(0, 0, 0, 0.52)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.moveTo(p[0].x, p[0].y); ctx.lineTo(p[1].x, p[1].y);
+    ctx.lineTo(p[2].x, p[2].y); ctx.lineTo(p[3].x, p[3].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+
+    // White edge line (M365 style)
+    ctx.beginPath();
+    ctx.moveTo(p[0].x, p[0].y); ctx.lineTo(p[1].x, p[1].y);
+    ctx.lineTo(p[2].x, p[2].y); ctx.lineTo(p[3].x, p[3].y);
+    ctx.closePath();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // White corner brackets (contract + thicken as stability grows)
+    _drawScannerBracket(ctx, p[0], p[1], p[3], _scannerStability);
+    _drawScannerBracket(ctx, p[1], p[2], p[0], _scannerStability);
+    _drawScannerBracket(ctx, p[2], p[3], p[1], _scannerStability);
+    _drawScannerBracket(ctx, p[3], p[0], p[2], _scannerStability);
+  };
+  _scannerRafId = requestAnimationFrame(renderLoop);
+}
+
+function _drawScannerBracket(ctx, corner, adj1, adj2, stability) {
+  const d1x = adj1.x - corner.x, d1y = adj1.y - corner.y;
+  const len1 = Math.hypot(d1x, d1y) || 1;
+  const u1x = d1x / len1, u1y = d1y / len1;
+  const d2x = adj2.x - corner.x, d2y = adj2.y - corner.y;
+  const len2 = Math.hypot(d2x, d2y) || 1;
+  const u2x = d2x / len2, u2y = d2y / len2;
+  const offset = 20 - (stability * 8); // contracts from 20px → 12px
+  const arm = 22;
+  const sx = corner.x + (u1x + u2x) * offset;
+  const sy = corner.y + (u1y + u2y) * offset;
+  ctx.beginPath();
+  ctx.moveTo(sx + u1x * arm, sy + u1y * arm);
+  ctx.lineTo(sx, sy);
+  ctx.lineTo(sx + u2x * arm, sy + u2y * arm);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 3 + (stability * 2); // 3px → 5px as stable
+  ctx.lineCap = "square";
+  ctx.lineJoin = "miter";
+  ctx.stroke();
+}
+
+function stopEdgeDetectionLoop() {
+  _scannerEdgeLoopActive = false;
+  if (_scannerRafId) { cancelAnimationFrame(_scannerRafId); _scannerRafId = null; }
+  if (_scannerDetectRafId) { cancelAnimationFrame(_scannerDetectRafId); _scannerDetectRafId = null; }
+  if (_scannerEdgeWorker) { _scannerEdgeWorker.terminate(); _scannerEdgeWorker = null; }
+  _scannerEdgeDetectionBusy = false;
+  // Clear the canvas
+  const canvas = document.getElementById("scanner-tracking-canvas");
+  if (canvas) {
+    const ctx = canvas.getContext("2d");
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+}
+// ── End Live Edge Detection Loop ──────────────────────────────────────────────────
+
 function stopCameraStream() {
+  stopEdgeDetectionLoop();
   if (scannerCameraStream) {
     try {
       scannerCameraStream.getTracks().forEach(track => track.stop());
@@ -3216,8 +3470,10 @@ function stopCameraStream() {
   if (video) {
     video.srcObject = null;
     video.style.display = "none";
+    video.style.opacity = "0";
   }
 }
+
 
 function showScannerScreen(screenId) {
   document.querySelectorAll("#aether-scanner-viewport > .scanner-screen").forEach(scr => {
@@ -3294,10 +3550,27 @@ function startCameraStream() {
       .then(stream => {
         scannerCameraStream = stream;
         video.srcObject = stream;
+        // FIX: Keep video invisible until it is truly playing — prevents Android WebView
+        // from showing the default Play ▶ button chrome between srcObject assignment and first frame
+        video.style.opacity = "0";
+        video.style.transition = "opacity 0.35s ease";
         video.style.display = "block";
         if (docSheet) {
           docSheet.style.display = "none";
         }
+        // Reveal feed only after first frame renders — eliminates play-button flash
+        const revealVideo = () => {
+          video.style.opacity = "1";
+          // Start edge detection + live bounding box overlay
+          startEdgeDetectionLoop();
+        };
+        video.addEventListener("playing", revealVideo, { once: true });
+        // Fallback: if 'playing' never fires, reveal after data is loaded
+        video.addEventListener("loadeddata", () => {
+          setTimeout(() => {
+            if (parseFloat(video.style.opacity || "0") < 1) revealVideo();
+          }, 400);
+        }, { once: true });
         // Apply default flashlight state if possible
         setTimeout(applyFlashlightMode, 500);
       })
@@ -3307,8 +3580,15 @@ function startCameraStream() {
           .then(stream => {
             scannerCameraStream = stream;
             video.srcObject = stream;
+            video.style.opacity = "0";
+            video.style.transition = "opacity 0.35s ease";
             video.style.display = "block";
             if (docSheet) docSheet.style.display = "none";
+            const revealFallback = () => { video.style.opacity = "1"; };
+            video.addEventListener("playing", revealFallback, { once: true });
+            video.addEventListener("loadeddata", () => {
+              setTimeout(() => { if (parseFloat(video.style.opacity || "0") < 1) revealFallback(); }, 400);
+            }, { once: true });
           })
           .catch(fallbackErr => {
             console.error("Camera fail:", fallbackErr);
@@ -3330,6 +3610,7 @@ function startCameraStream() {
     }
   }
 }
+
 
 function switchScannerCamera() {
   scannerCameraFacingMode = (scannerCameraFacingMode === "environment") ? "user" : "environment";
@@ -4108,18 +4389,19 @@ function processScannerPage(index, targetSizeOption, callback) {
         const x3 = corners[3].x * img.width;
         const y3 = corners[3].y * img.height;
         
-        const warpedBase64 = window.AndroidBridge.warpPerspective(
-          fullBase64,
-          x0, y0,
-          x1, y1,
-          x2, y2,
-          x3, y3,
-          w, h
-        );
-        
-        if (warpedBase64 && !warpedBase64.startsWith("Error")) {
+        try {
+          const resObj = JSON.parse(window.AndroidBridge.warpPerspective(
+            fullBase64,
+            x0, y0,
+            x1, y1,
+            x2, y2,
+            x3, y3,
+            w, h
+          ));
+          if (!resObj.ok) throw new Error(resObj.error);
+          
           if (filter === "original") {
-            return callback(warpedBase64);
+            return callback(resObj.data);
           } else {
             // Apply grayscale or color enhancement on top of warped result
             const filterImg = new Image();
@@ -4157,9 +4439,11 @@ function processScannerPage(index, targetSizeOption, callback) {
               ctxDst.putImageData(dstData, 0, 0);
               return callback(canvasDst.toDataURL("image/jpeg", 0.92));
             };
-            filterImg.src = warpedBase64;
+            filterImg.src = resObj.data;
             return;
           }
+        } catch (e) {
+            console.warn("Native warpPerspective processing failed:", e);
         }
       } catch (e) {
         console.warn("Native warpPerspective failed, falling back to JS:", e);
@@ -4315,8 +4599,14 @@ function performSaveAction(actionType) {
       
       if (currentSaveFormat === "PDF") {
         if (window.AndroidBridge && window.AndroidBridge.combineImagesToPdf) {
-          const res = window.AndroidBridge.combineImagesToPdf(JSON.stringify(finalProcessedPages), finalName);
-          console.log("Stitched PDF path:", res);
+          try {
+            const resObj = JSON.parse(window.AndroidBridge.combineImagesToPdf(JSON.stringify(finalProcessedPages), finalName));
+            if (!resObj.ok) throw new Error(resObj.error);
+            addNotification("Saved as PDF securely! Path: " + resObj.path, "success");
+            closeAetherScanner();
+          } catch (e) {
+            addNotification("PDF Compilation failed: " + e.message, "error");
+          }
         } else {
           downloadBase64File(finalProcessedPages[0], finalName);
         }
@@ -4324,7 +4614,7 @@ function performSaveAction(actionType) {
         if (window.AndroidBridge && window.AndroidBridge.saveImageToGallery) {
           finalProcessedPages.forEach((p, index) => {
             const pageName = `${customName}_page_${index + 1}.jpg`;
-            window.AndroidBridge.saveImageToGallery(pageName, p);
+            try { JSON.parse(window.AndroidBridge.saveImageToGallery(pageName, p)); } catch(e){}
           });
         } else {
           finalProcessedPages.forEach((p, index) => {
@@ -4475,14 +4765,14 @@ async function convertImagesToPdf() {
         if (readCount === window.combineSelectedFiles.length) {
           status.textContent = "Combining images natively...";
           setTimeout(() => {
-            const resPath = window.AndroidBridge.combineImagesToPdf(JSON.stringify(base64List), outputName);
-            if (resPath.startsWith("Error")) {
-              status.textContent = "Combine failed: " + resPath;
+            try {
+              const resObj = JSON.parse(window.AndroidBridge.combineImagesToPdf(JSON.stringify(base64List), outputName));
+              if (!resObj.ok) throw new Error(resObj.error);
+              status.textContent = "Compiled securely offline.";
+              addNotification("PDF saved to " + resObj.path, "success");
+            } catch (e) {
+              status.textContent = "Compilation failed: " + e.message;
               status.style.color = "var(--accent-rose)";
-            } else {
-              status.textContent = `PDF compiled successfully! Saved to Downloads: ${outputName}`;
-              status.style.color = "var(--accent-emerald)";
-              addNotification(`PDF compiled: ${outputName}`, "success");
               saveCreationRecord(outputName, "PDF", "medium");
             }
           }, 50);
@@ -4565,25 +4855,14 @@ async function rasterizePdf() {
       status.textContent = "Rasterizing PDF pages natively...";
       setTimeout(() => {
         const base64 = reader.result;
-        const resJsonStr = window.AndroidBridge.rasterizePdf(base64, window.rasterSelectedFile.name);
-        if (resJsonStr.startsWith("Error")) {
-          status.textContent = "Rasterization failed: " + resJsonStr;
-          status.style.color = "var(--accent-rose)";
-        } else {
-          try {
-            const imgBase64List = JSON.parse(resJsonStr);
-            status.textContent = `Rasterization complete! ${imgBase64List.length} pages extracted.`;
-            status.style.color = "var(--accent-emerald)";
-            
-            const baseName = window.rasterSelectedFile.name.split(".")[0];
-            imgBase64List.forEach((imgBase64, idx) => {
-              downloadBase64File(imgBase64, `${baseName}_page_${idx + 1}.jpg`);
-            });
-            addNotification(`Rasterized ${imgBase64List.length} pages to Downloads`, "success");
-          } catch(e) {
-            status.textContent = "Failed to parse rasterized images: " + e.message;
-            status.style.color = "var(--accent-rose)";
-          }
+        try {
+          const resObj = JSON.parse(window.AndroidBridge.rasterizePdf(base64, window.rasterSelectedFile.name));
+          if (!resObj.ok) throw new Error(resObj.error);
+          status.textContent = "Rasterization finished.";
+          window.rasterizedImages = resObj.images; // AndroidBridge returns JSONArray for images
+          renderRasterizedImages();
+        } catch (e) {
+          status.textContent = "Rasterization failed: " + e.message;
         }
       }, 50);
     };
@@ -4660,14 +4939,13 @@ async function runEncryptFile() {
     reader.onload = () => {
       status.textContent = "Encrypting file bytes natively...";
       const base64 = reader.result;
-      const resPath = window.AndroidBridge.encryptFile(base64, window.cryptoSelectedFile.name, password);
-      if (resPath.startsWith("Error")) {
-        status.textContent = "Encryption failed: " + resPath;
-        status.style.color = "var(--accent-rose)";
-      } else {
-        status.textContent = `File locked successfully! Output: ${resPath}`;
-        status.style.color = "var(--accent-emerald)";
-        addNotification(`File encrypted: ${resPath.split(/[/\\]/).pop()}`, "success");
+      try {
+        const resObj = JSON.parse(window.AndroidBridge.encryptFile(base64, window.cryptoSelectedFile.name, password));
+        if (!resObj.ok) throw new Error(resObj.error);
+        status.textContent = "File encrypted securely.";
+        addNotification("Encrypted file saved at: " + resObj.path, "success");
+      } catch (e) {
+        status.textContent = "Encryption failed: " + e.message;
       }
     };
     reader.onerror = () => {
@@ -4712,14 +4990,13 @@ async function runDecryptFile() {
     reader.onload = () => {
       status.textContent = "Decrypting bytes...";
       const base64 = reader.result;
-      const resPath = window.AndroidBridge.decryptFile(base64, window.cryptoSelectedFile.name, password);
-      if (resPath.startsWith("Error")) {
-        status.textContent = "Decryption failed (Check key): " + resPath;
-        status.style.color = "var(--accent-rose)";
-      } else {
-        status.textContent = `File unlocked! Saved to: ${resPath}`;
-        status.style.color = "var(--accent-emerald)";
-        addNotification(`File decrypted: ${resPath.split(/[/\\]/).pop()}`, "success");
+      try {
+        const resObj = JSON.parse(window.AndroidBridge.decryptFile(base64, window.cryptoSelectedFile.name, password));
+        if (!resObj.ok) throw new Error(resObj.error);
+        status.textContent = "File decrypted securely.";
+        addNotification("Decrypted file saved at: " + resObj.path, "success");
+      } catch (e) {
+        status.textContent = "Decryption failed: " + e.message;
       }
     };
     reader.onerror = () => {
@@ -4775,19 +5052,19 @@ async function runPasswordRecovery() {
     reader.onload = () => {
       status.textContent = "Brute-forcing candidate keys natively...";
       const base64 = reader.result;
-      const foundPwd = window.AndroidBridge.recoverPassword(base64, mode, JSON.stringify(candList));
-      if (foundPwd) {
-        status.textContent = `Success! Password found: "${foundPwd}"`;
+      try {
+        const resObj = JSON.parse(window.AndroidBridge.recoverPassword(base64, mode, JSON.stringify(candList)));
+        if (!resObj.ok) throw new Error(resObj.error);
+        status.textContent = `Success! Password found: "${resObj.password}"`;
         status.style.color = "var(--accent-emerald)";
-        
         const encPassInput = document.getElementById("encrypt-password");
         if (encPassInput) {
-          encPassInput.value = foundPwd;
+          encPassInput.value = resObj.password;
           onEncryptPasswordInputMobile();
         }
         addNotification(`Password recovered successfully!`, "success");
-      } else {
-        status.textContent = "Recovery failed: Password not found in search space.";
+      } catch (e) {
+        status.textContent = "Recovery failed: " + e.message;
         status.style.color = "var(--accent-rose)";
       }
     };
@@ -6037,7 +6314,7 @@ window.copyBgRemovedImageToClipboardMobile = copyBgRemovedImageToClipboardMobile
 window.downloadBgRemovedImageMobile = downloadBgRemovedImageMobile;
 
 // ----------------- AETHER SHARE CONTROLLERS -----------------
-let shareSessionTimer = null;
+var shareSessionTimer = null;
 
 function initAetherShare() {
   console.log("initAetherShare: Initializing local state...");
@@ -6289,3 +6566,10 @@ window.simulateShareFileTransfer = simulateShareFileTransfer;
 window.updateShareSessionCountdown = updateShareSessionCountdown;
 window.adjustCropFromReview = adjustCropFromReview;
 window.goToCreationsScreen = goToCreationsScreen;
+
+// Failsafe Stubs
+window.setProductivityTool = window.setProductivityTool || function() {};
+window.showSettingsPopup = window.showSettingsPopup || function() {};
+window.closeSettingsPopup = window.closeSettingsPopup || function() {};
+window.toggleNotificationDropdown = window.toggleNotificationDropdown || function() {};
+window.clearAllNotifications = window.clearAllNotifications || function() {};

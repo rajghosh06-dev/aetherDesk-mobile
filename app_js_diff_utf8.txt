@@ -1,0 +1,355 @@
+﻿diff --git a/app/src/main/assets/www/app.js b/app/src/main/assets/www/app.js
+index 56bb3f5..2e0b7fa 100644
+--- a/app/src/main/assets/www/app.js
++++ b/app/src/main/assets/www/app.js
+@@ -66,6 +66,12 @@ let cachedCropImageSrc = null;
+ let scannerCameraFacingMode = "environment";
+ let scannerFlashlightMode = "off";
+ let scannerCameraStream = null;
++let scannerTrackingLoopActive = false;
++let scannerTrackingAnimationFrameId = null;
++let scannerTrackingIntervalId = null;
++let scannerLastDetectedEdges = null;
++let scannerSmoothedEdges = null;
++let scannerStability = 0;
+ 
+ function initApp() {
+   console.log("initApp: Starting initialization...");
+@@ -597,11 +603,11 @@ let physicalDeviceSpecs = null;
+ function fetchPhysicalDeviceSpecs() {
+   if (physicalDeviceSpecs && physicalDeviceSpecs.isRealBridge) return physicalDeviceSpecs;
+   
+-  // Default hard-coded profile for OnePlus Nord CE4 5G (as requested)
+-  let model = "OnePlus Nord CE4 5G";
+-  let brand = "OnePlus";
+-  let hardware = "qcom";
+-  let cores = 8;
++  // Default fallback placeholders (as requested)
++  let model = "--";
++  let brand = "--";
++  let hardware = "--";
++  let cores = "--";
+   let isRealBridge = false;
+   
+   // Attempt to load from localStorage first as fallback
+@@ -610,10 +616,11 @@ function fetchPhysicalDeviceSpecs() {
+     const stored = localStorage.getItem("deviceSpecs");
+     if (stored) {
+       storedSpecs = JSON.parse(stored);
+-      model = storedSpecs.model || model;
+-      brand = storedSpecs.manufacturer || brand;
+-      cores = storedSpecs.cores || cores;
+-      hardware = storedSpecs.hardware || hardware;
++      if (storedSpecs.model && storedSpecs.model !== "--") model = storedSpecs.model;
++      if (storedSpecs.manufacturer && storedSpecs.manufacturer !== "--") brand = storedSpecs.manufacturer;
++      if (storedSpecs.cores && storedSpecs.cores !== "--") cores = storedSpecs.cores;
++      if (storedSpecs.hardware && storedSpecs.hardware !== "--") hardware = storedSpecs.hardware;
++      if (storedSpecs.isRealBridge) isRealBridge = true;
+     }
+   } catch(e) {
+     console.warn("Failed to read deviceSpecs from localStorage", e);
+@@ -633,29 +640,31 @@ function fetchPhysicalDeviceSpecs() {
+   }
+   
+   // Resolve processor name and GPU name based on hardware info
+-  let processor = "Qualcomm Snapdragon CPU";
+-  let gpu = "Adreno Graphics Engine";
+-  
+-  const hwLower = hardware.toLowerCase();
+-  const modelLower = model.toLowerCase();
+-  
+-  if (hwLower.includes("goldfish") || hwLower.includes("ranchu") || modelLower.includes("sdk_gphone")) {
+-    processor = "Android x86_64 Virtual CPU";
+-    gpu = "SwiftShader Emulator GPU";
+-    brand = "Google";
+-    model = "Android Emulator";
+-  } else if (hwLower.includes("qcom") || hwLower.includes("msm") || hwLower.includes("sdm") || modelLower.includes("nord ce4")) {
+-    processor = "Qualcomm Snapdragon Octa-Core";
+-    gpu = "Qualcomm Adreno GPU";
+-  } else if (hwLower.includes("mt") || hwLower.includes("mediatek")) {
+-    processor = "MediaTek Dimensity / Helio Core";
+-    gpu = "ARM Mali GPU Core";
+-  } else if (hwLower.includes("exynos")) {
+-    processor = "Samsung Exynos Octa-Core";
+-    gpu = "Samsung Xclipse / ARM Mali GPU";
+-  } else {
+-    processor = `${brand} ${hardware.toUpperCase()}`;
+-    gpu = "Integrated Mobile GPU";
++  let processor = "--";
++  let gpu = "--";
++  
++  const hwLower = (hardware || "").toLowerCase();
++  const modelLower = (model || "").toLowerCase();
++  
++  if (hwLower !== "--" && hwLower !== "") {
++    if (hwLower.includes("goldfish") || hwLower.includes("ranchu") || modelLower.includes("sdk_gphone")) {
++      processor = "Android x86_64 Virtual CPU";
++      gpu = "SwiftShader Emulator GPU";
++      brand = "Google";
++      model = "Android Emulator";
++    } else if (hwLower.includes("qcom") || hwLower.includes("msm") || hwLower.includes("sdm") || modelLower.includes("nord ce4")) {
++      processor = "Qualcomm Snapdragon CPU";
++      gpu = "Qualcomm Adreno GPU";
++    } else if (hwLower.includes("mt") || hwLower.includes("mediatek")) {
++      processor = "MediaTek CPU";
++      gpu = "ARM Mali GPU";
++    } else if (hwLower.includes("exynos")) {
++      processor = "Samsung Exynos CPU";
++      gpu = "Samsung Xclipse / ARM Mali GPU";
++    } else {
++      processor = brand !== "--" ? `${brand} ${hardware.toUpperCase()}` : hardware.toUpperCase();
++      gpu = "Integrated Mobile GPU";
++    }
+   }
+   
+   physicalDeviceSpecs = {
+@@ -668,11 +677,13 @@ function fetchPhysicalDeviceSpecs() {
+     isRealBridge: isRealBridge
+   };
+   
+-  // Save corrected/fetched specs to localStorage
+-  try {
+-    localStorage.setItem("deviceSpecs", JSON.stringify(physicalDeviceSpecs));
+-  } catch (e) {
+-    console.warn("Failed to save deviceSpecs to localStorage", e);
++  // Save corrected/fetched specs to localStorage if it's a real bridge or we have something valid
++  if (isRealBridge || (model !== "--" && model !== "Android Emulator")) {
++    try {
++      localStorage.setItem("deviceSpecs", JSON.stringify(physicalDeviceSpecs));
++    } catch (e) {
++      console.warn("Failed to save deviceSpecs to localStorage", e);
++    }
+   }
+   
+   return physicalDeviceSpecs;
+@@ -3205,7 +3216,190 @@ function bindInteractiveCropEvents() {
+   canvas.addEventListener("touchend", onEnd);
+ }
+ 
++function startScannerTracking() {
++  if (scannerTrackingLoopActive) return;
++  scannerTrackingLoopActive = true;
++  scannerStability = 0;
++  scannerSmoothedEdges = null;
++  scannerLastDetectedEdges = null;
++  
++  const video = document.getElementById("scanner-camera-feed");
++  if (!video) return;
++  
++  const detectionCanvas = document.createElement("canvas");
++  const detectionCtx = detectionCanvas.getContext("2d");
++  
++  scannerTrackingIntervalId = setInterval(() => {
++    if (!scannerTrackingLoopActive) return;
++    if (video.paused || video.ended || !video.srcObject) return;
++    
++    const videoW = video.videoWidth;
++    const videoH = video.videoHeight;
++    if (!videoW || !videoH) return;
++    
++    detectionCanvas.width = videoW;
++    detectionCanvas.height = videoH;
++    detectionCtx.drawImage(video, 0, 0, videoW, videoH);
++    
++    try {
++      const coords = detectDocumentEdges(detectionCanvas);
++      if (coords && coords.length === 4) {
++        scannerLastDetectedEdges = coords.map(pt => ({
++          x: pt.x / videoW,
++          y: pt.y / videoH
++        }));
++      }
++    } catch (e) {
++      console.warn("Detection error in loop:", e);
++    }
++  }, 100);
++  
++  const canvas = document.getElementById("scanner-tracking-canvas");
++  if (!canvas) return;
++  
++  function renderFrame() {
++    if (!scannerTrackingLoopActive) return;
++    scannerTrackingAnimationFrameId = requestAnimationFrame(renderFrame);
++    
++    const rect = canvas.getBoundingClientRect();
++    if (rect.width === 0 || rect.height === 0) return;
++    
++    if (canvas.width !== rect.width || canvas.height !== rect.height) {
++      canvas.width = rect.width;
++      canvas.height = rect.height;
++    }
++    
++    const ctx = canvas.getContext("2d");
++    ctx.clearRect(0, 0, canvas.width, canvas.height);
++    
++    let target = scannerLastDetectedEdges;
++    if (!target) {
++      target = [
++        { x: 0.15, y: 0.15 },
++        { x: 0.85, y: 0.15 },
++        { x: 0.85, y: 0.85 },
++        { x: 0.15, y: 0.85 }
++      ];
++    }
++    
++    if (!scannerSmoothedEdges) {
++      scannerSmoothedEdges = target.map(pt => ({ ...pt }));
++    } else {
++      const EMA_ALPHA = 0.15;
++      for (let i = 0; i < 4; i++) {
++        scannerSmoothedEdges[i].x += (target[i].x - scannerSmoothedEdges[i].x) * EMA_ALPHA;
++        scannerSmoothedEdges[i].y += (target[i].y - scannerSmoothedEdges[i].y) * EMA_ALPHA;
++      }
++    }
++    
++    if (scannerLastDetectedEdges) {
++      let diff = 0;
++      for (let i = 0; i < 4; i++) {
++        diff += Math.hypot(
++          scannerLastDetectedEdges[i].x - scannerSmoothedEdges[i].x,
++          scannerLastDetectedEdges[i].y - scannerSmoothedEdges[i].y
++        );
++      }
++      if (diff < 0.03) {
++        scannerStability = Math.min(1.0, scannerStability + 0.03);
++      } else {
++        scannerStability = Math.max(0.0, scannerStability - 0.15);
++      }
++    } else {
++      scannerStability = Math.max(0.0, scannerStability - 0.05);
++    }
++    
++    const p = scannerSmoothedEdges.map(pt => ({
++      x: pt.x * canvas.width,
++      y: pt.y * canvas.height
++    }));
++    
++    ctx.beginPath();
++    ctx.moveTo(0, 0);
++    ctx.lineTo(canvas.width, 0);
++    ctx.lineTo(canvas.width, canvas.height);
++    ctx.lineTo(0, canvas.height);
++    ctx.closePath();
++    
++    ctx.moveTo(p[0].x, p[0].y);
++    ctx.lineTo(p[3].x, p[3].y);
++    ctx.lineTo(p[2].x, p[2].y);
++    ctx.lineTo(p[1].x, p[1].y);
++    ctx.closePath();
++    
++    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
++    ctx.fill("evenodd");
++    
++    ctx.beginPath();
++    ctx.moveTo(p[0].x, p[0].y);
++    ctx.lineTo(p[1].x, p[1].y);
++    ctx.lineTo(p[2].x, p[2].y);
++    ctx.lineTo(p[3].x, p[3].y);
++    ctx.closePath();
++    ctx.strokeStyle = "rgba(0, 240, 255, 0.65)";
++    ctx.lineWidth = 2.0;
++    ctx.stroke();
++    
++    drawBracket(ctx, p[0], p[1], p[3], scannerStability);
++    drawBracket(ctx, p[1], p[2], p[0], scannerStability);
++    drawBracket(ctx, p[2], p[3], p[1], scannerStability);
++    drawBracket(ctx, p[3], p[0], p[2], scannerStability);
++  }
++  
++  scannerTrackingAnimationFrameId = requestAnimationFrame(renderFrame);
++}
++
++function stopScannerTracking() {
++  scannerTrackingLoopActive = false;
++  if (scannerTrackingIntervalId) {
++    clearInterval(scannerTrackingIntervalId);
++    scannerTrackingIntervalId = null;
++  }
++  if (scannerTrackingAnimationFrameId) {
++    cancelAnimationFrame(scannerTrackingAnimationFrameId);
++    scannerTrackingAnimationFrameId = null;
++  }
++  
++  const canvas = document.getElementById("scanner-tracking-canvas");
++  if (canvas) {
++    const ctx = canvas.getContext("2d");
++    ctx.clearRect(0, 0, canvas.width, canvas.height);
++  }
++}
++
++function drawBracket(ctx, p, pAdj1, pAdj2, stability) {
++  const dx1 = pAdj1.x - p.x;
++  const dy1 = pAdj1.y - p.y;
++  const len1 = Math.hypot(dx1, dy1);
++  const ux1 = len1 > 0 ? dx1 / len1 : 0;
++  const uy1 = len1 > 0 ? dy1 / len1 : 0;
++  
++  const dx2 = pAdj2.x - p.x;
++  const dy2 = pAdj2.y - p.y;
++  const len2 = Math.hypot(dx2, dy2);
++  const ux2 = len2 > 0 ? dx2 / len2 : 0;
++  const uy2 = len2 > 0 ? dy2 / len2 : 0;
++  
++  const offset = 16 - (stability * 12);
++  const armLength = 22;
++  
++  const sx = p.x + (ux1 + ux2) * offset;
++  const sy = p.y + (uy1 + uy2) * offset;
++  
++  ctx.beginPath();
++  ctx.moveTo(sx + ux1 * armLength, sy + uy1 * armLength);
++  ctx.lineTo(sx, sy);
++  ctx.lineTo(sx + ux2 * armLength, sy + uy2 * armLength);
++  
++  ctx.strokeStyle = "#00f0ff";
++  ctx.lineWidth = 2 + (stability * 2.5);
++  ctx.lineCap = "round";
++  ctx.lineJoin = "round";
++  ctx.stroke();
++}
++
+ function stopCameraStream() {
++  stopScannerTracking();
+   if (scannerCameraStream) {
+     try {
+       scannerCameraStream.getTracks().forEach(track => track.stop());
+@@ -3300,6 +3494,7 @@ function startCameraStream() {
+         }
+         // Apply default flashlight state if possible
+         setTimeout(applyFlashlightMode, 500);
++        startScannerTracking();
+       })
+       .catch(err => {
+         console.warn("Could not access camera with constraints, trying fallback:", err);
+@@ -3309,6 +3504,7 @@ function startCameraStream() {
+             video.srcObject = stream;
+             video.style.display = "block";
+             if (docSheet) docSheet.style.display = "none";
++            startScannerTracking();
+           })
+           .catch(fallbackErr => {
+             console.error("Camera fail:", fallbackErr);
+@@ -3318,6 +3514,7 @@ function startCameraStream() {
+                 docSheet.style.transform = "scale(1) translateY(0)";
+                 docSheet.style.opacity = "0.95";
+               }, 100);
++              startScannerTracking();
+             }
+           });
+       });
+@@ -3327,6 +3524,7 @@ function startCameraStream() {
+         docSheet.style.transform = "scale(1) translateY(0)";
+         docSheet.style.opacity = "0.95";
+       }, 100);
++      startScannerTracking();
+     }
+   }
+ }
+@@ -3391,6 +3589,7 @@ function applyFlashlightMode() {
+ }
+ 
+ function closeAetherScanner() {
++  stopScannerTracking();
+   document.getElementById("aether-scanner-viewport").style.display = "none";
+   if (scannerCameraStream) {
+     try {
