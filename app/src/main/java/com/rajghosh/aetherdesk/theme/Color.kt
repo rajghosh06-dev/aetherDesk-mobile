@@ -1,4 +1,4 @@
-package com.example.aetherdesk.theme
+package com.rajghosh.aetherdesk.theme
 
 import androidx.compose.ui.graphics.Color
 

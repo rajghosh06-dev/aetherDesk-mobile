@@ -1,10 +1,90 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- GLOBAL BOOT-TIME ERROR BOUNDARY -->
+  <script>
+    window.isAppBooted = false;
+    window.onerror = function(message, source, lineno, colno, error) {
+      if (!window.isAppBooted) {
+        // Destroy splash screen completely
+        const overlay = document.getElementById('boot-splash-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+            overlay.remove();
+        }
+        
+        // Ensure body is visible
+        document.body.style.display = 'block';
+        
+        // Build Fatal Error Card
+        const errorCard = document.createElement('div');
+        errorCard.style.cssText = "position: fixed; z-index: 999999; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.95); backdrop-filter: blur(10px); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;";
+        
+        errorCard.innerHTML = `
+          <div style="background: rgba(239,68,68,0.1); border: 1px solid #ef4444; border-radius: 12px; padding: 24px; max-width: 400px; width: 100%; box-shadow: 0 10px 25px rgba(239,68,68,0.2);">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="width:28px;height:28px;"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <h2 style="color: #ef4444; margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.5rem;">Fatal Boot Error</h2>
+            </div>
+            <p style="color: #f8fafc; font-size: 0.9rem; line-height: 1.5; margin-bottom: 12px; font-family: monospace; word-break: break-all;"><strong>Message:</strong> ${message}</p>
+            <p style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 8px; font-family: monospace; word-break: break-all;"><strong>File:</strong> ${source}</p>
+            <p style="color: #94a3b8; font-size: 0.8rem; margin-bottom: 20px; font-family: monospace;"><strong>Line:</strong> ${lineno}:${colno}</p>
+            <button onclick="window.location.reload()" style="background: #ef4444; color: white; border: none; padding: 12px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; font-family: 'Inter', sans-serif;">Reload App</button>
+          </div>
+        `;
+        document.documentElement.appendChild(errorCard);
+      } else {
+        // Post-boot runtime error dialog
+        const warningCard = document.createElement('div');
+        warningCard.id = "app-runtime-error-popup";
+        warningCard.style.cssText = "position: fixed; z-index: 1000000; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.85); backdrop-filter: blur(8px); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;";
+        
+        const stackInfo = (error && error.stack) ? `<pre style="color: #cbd5e1; font-size: 0.7rem; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; overflow: auto; max-height: 120px; text-align: left; white-space: pre-wrap; word-break: break-all; margin-top: 8px; font-family: monospace;">${error.stack}</pre>` : '';
+        const cleanSource = (source && source.includes('/')) ? source.substring(source.lastIndexOf('/') + 1) : (source || 'Unknown');
+        
+        warningCard.innerHTML = `
+          <div style="background: #1e293b; border: 1px solid #f59e0b; border-radius: 12px; padding: 20px; max-width: 90%; width: 360px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; color: #ffffff; font-family: 'Inter', sans-serif;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; justify-content: center;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" style="width:24px;height:24px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <h3 style="color: #f59e0b; margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.15rem;">Application Warning</h3>
+            </div>
+            <p style="color: #e2e8f0; font-size: 0.85rem; line-height: 1.4; margin-bottom: 8px; font-family: monospace; word-break: break-all; text-align: left;"><strong>Error:</strong> ${message}</p>
+            <p style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 4px; font-family: monospace; word-break: break-all; text-align: left;"><strong>Source:</strong> ${cleanSource}</p>
+            <p style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 4px; font-family: monospace; text-align: left;"><strong>Location:</strong> Line ${lineno}, Col ${colno}</p>
+            ${stackInfo}
+            <div style="margin-top: 16px; display: flex; gap: 8px;">
+              <button onclick="document.getElementById('app-runtime-error-popup').remove()" style="background: #475569; color: white; border: none; padding: 10px; border-radius: 6px; flex: 1; font-weight: bold; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 0.85rem;">Dismiss</button>
+              <button onclick="window.location.reload()" style="background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; flex: 1; font-weight: bold; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 0.85rem;">Reload</button>
+            </div>
+          </div>
+        `;
+        
+        const oldPopup = document.getElementById("app-runtime-error-popup");
+        if (oldPopup) oldPopup.remove();
+        
+        document.documentElement.appendChild(warningCard);
+      }
+    };
+    
+    window.onunhandledrejection = function(event) {
+      if (!window.isAppBooted) {
+         window.onerror(event.reason ? event.reason.toString() : 'Unhandled Promise Rejection', 'Promise', 0, 0, event.reason);
+      } else {
+         const reason = event.reason;
+         const msg = reason ? (reason.message || reason.toString()) : 'Unhandled Promise Rejection';
+         const src = reason ? (reason.fileName || 'Promise') : 'Promise';
+         const line = reason ? (reason.lineNumber || 0) : 0;
+         const col = reason ? (reason.columnNumber || 0) : 0;
+         window.onerror(msg, src, line, col, reason);
+      }
+    };
+  </script>
+
   <meta charset="utf-8">
   <title>AetherDesk Mobile</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="lib/highlight-theme.css">
   <!-- <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet"> offline capability -->
   <style>
     /* Critical FOUC preventer: ensures splash is opaque immediately */
@@ -127,7 +207,7 @@
   </div>
 
   <!-- Fullscreen Onboarding Overlay -->
-  <div id="onboarding-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #050807; z-index: 99999; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box; padding: 20px; overflow-y: auto;">
+  <div id="onboarding-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg-primary); z-index: 99999; flex-direction: column; justify-content: center; align-items: center; box-sizing: border-box; padding: 20px; overflow-y: auto;">
     <div class="glass-panel" style="width: 100%; max-width: 380px; padding: 24px; border-radius: 16px; box-shadow: 0 16px 48px rgba(0,0,0,0.8); display: flex; flex-direction: column; gap: 20px; box-sizing: border-box;">
       
       <!-- Slide 1: Survey -->
@@ -211,9 +291,8 @@
   <!-- App Header -->
   <header class="app-header">
 
-  <div class="header-title-section" style="flex:1; display:flex; align-items:center; gap:8px;">
-    <!-- Branding logo removed per user request -->
-    
+  <div class="header-title-section" style="flex:1; display:flex; align-items:center; gap:8px; cursor:pointer;" onclick="showAppInfoPopup()">
+    <img src="images/logo_transparent.png" class="app-logo-theme" alt="AetherDesk Logo" style="width: 28px; height: 28px; object-fit: contain; filter: drop-shadow(0 0 4px var(--accent-emerald));">
     <div class="header-text">
       <h1 class="header-title">AetherDesk</h1>
       <p class="header-subtitle">OFFLINE AI WORKSPACE</p>
@@ -487,7 +566,7 @@
             <p style="font-size: 0.75rem; color: var(--text-muted);">Simulate a high-fidelity batch scanner with AI Edge alignment and OCR indexing.</p>
             
             <!-- Clickable camera launch card -->
-            <div onclick="openAetherScanner()" class="scanner-card-clickable" style="padding: 28px 24px; border-radius: 16px; background: var(--card-bg-inner); border: 2px dashed var(--accent-emerald); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
+            <div onclick="if(window.AndroidBridge) window.AndroidBridge.launchNativeScanner(); else alert('Native Scanner not available');" class="scanner-card-clickable" style="padding: 28px 24px; border-radius: 16px; background: var(--card-bg-inner); border: 2px dashed var(--accent-emerald); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 48px; height: 48px; color: var(--accent-emerald); filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));">
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                 <circle cx="12" cy="13" r="4"/>
@@ -759,20 +838,7 @@
                   </div>
                 </div>
 
-                <div>
-                  <p style="font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">Or Take Webcam Photo:</p>
-                  <div style="background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; overflow: hidden; position: relative; width: 100%; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;">
-                    <video id="ocr-webcam-feed" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; display: none;"></video>
-                    <canvas id="ocr-webcam-canvas" style="display: none;"></canvas>
-                    <div id="ocr-webcam-placeholder" style="color: var(--text-muted); font-size: 0.75rem; text-align: center; padding: 10px;">
-                      Camera is stopped. Click Start Camera below.
-                    </div>
-                  </div>
-                  <div style="display: flex; gap: 6px; margin-top: 6px;">
-                    <button id="ocr-cam-toggle-btn" class="btn-secondary" style="flex: 1; font-size: 0.7rem; padding: 6px;" onclick="toggleWebcam()">Start Camera</button>
-                    <button id="ocr-capture-btn" class="btn-secondary" style="flex: 1; font-size: 0.7rem; padding: 6px;" onclick="captureWebcamSnapshot()" disabled>Capture Photo</button>
-                  </div>
-                </div>
+                <!-- Legacy Webcam photo block removed. Native ML Kit Scanner used instead. -->
 
                 <button class="btn-neon btn-neon-emerald" style="width:100%;" onclick="extractOcrText()">Extract Text (OCR)</button>
                 <p id="ocr-status-msg" style="font-size: 0.75rem; color: var(--accent-emerald); font-weight:500; margin-top: 2px;"></p>
@@ -1116,77 +1182,64 @@
 
     <!-- Tab 6: Performance Telemetry -->
     <section id="tab-performance" class="tab-content">
-      <div class="glass-panel card" style="padding: 16px;">
-        <div class="card-header" style="margin-bottom: 12px;">
+      <!-- Live Monitoring Card -->
+      <div class="glass-panel" style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+        <div class="card-header" style="margin-bottom: 4px;">
           <svg class="card-icon icon-emerald" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; color: var(--accent-emerald); filter: drop-shadow(0 0 4px var(--accent-emerald));">
             <line x1="18" y1="20" x2="18" y2="10"/>
             <line x1="12" y1="20" x2="12" y2="4"/>
             <line x1="6" y1="20" x2="6" y2="14"/>
           </svg>
-          <h3>System Performance</h3>
+          <h3 style="font-weight: 700; color: var(--text-primary); font-size: 1rem; margin: 0; font-family: 'Outfit', sans-serif;">System Performance</h3>
         </div>
-        
-        <!-- Horizontal Scrollable Resource Chips -->
-        <div class="resource-selector-row" style="display: flex; gap: 10px; overflow-x: auto; padding: 4px 4px 12px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; margin-bottom: 8px;">
-          <div class="resource-chip active" id="res-chip-cpu" onclick="selectTelemetryResource('cpu')">
-            <span class="chip-label">CPU</span>
-            <span class="chip-value text-purple" id="telemetry-cpu-pct">--</span>
-            <div class="chip-sparkline-box"><canvas id="sparkline-cpu"></canvas></div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--panel-border); padding-top: 12px;">
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-weight: 700; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">CPU (AetherDesk)</span>
+            <span id="live-cpu-text" style="font-weight: 800; font-size: 1.4rem; color: var(--accent-emerald); filter: drop-shadow(0 0 4px rgba(0, 230, 118, 0.2));">0%</span>
           </div>
-          <div class="resource-chip" id="res-chip-ram" onclick="selectTelemetryResource('ram')">
-            <span class="chip-label">Memory</span>
-            <span class="chip-value text-cyan" id="telemetry-ram-pct">--</span>
-            <div class="chip-sparkline-box"><canvas id="sparkline-ram"></canvas></div>
-          </div>
-          <div class="resource-chip" id="res-chip-vram" onclick="selectTelemetryResource('vram')">
-            <span class="chip-label">Swap</span>
-            <span class="chip-value text-rose" id="telemetry-vram-pct">--</span>
-            <div class="chip-sparkline-box"><canvas id="sparkline-vram"></canvas></div>
-          </div>
-          <div class="resource-chip" id="res-chip-gpu" onclick="selectTelemetryResource('gpu')">
-            <span class="chip-label">GPU</span>
-            <span class="chip-value text-emerald" id="telemetry-gpu-pct">--</span>
-            <div class="chip-sparkline-box"><canvas id="sparkline-gpu"></canvas></div>
-          </div>
-          <div class="resource-chip" id="res-chip-temp" onclick="selectTelemetryResource('temp')">
-            <span class="chip-label">Temp</span>
-            <span class="chip-value text-gold" id="telemetry-temp-pct">--</span>
-            <div class="chip-sparkline-box"><canvas id="sparkline-temp"></canvas></div>
+          <div style="display: flex; flex-direction: column; text-align: right; gap: 2px;">
+            <span style="font-weight: 700; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">RAM Utilization</span>
+            <span id="live-ram-text" style="font-weight: 800; font-size: 1.4rem; color: var(--accent-cyan); filter: drop-shadow(0 0 4px rgba(0, 191, 255, 0.2));">0%</span>
           </div>
         </div>
 
-        <!-- Big Real-time Graph Detail Card -->
-        <div class="telemetry-detail-card" style="background: rgba(0,0,0,0.25); border: 1px solid var(--panel-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h4 id="telemetry-detail-title" style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary);">CPU Utilization</h4>
-            <span id="telemetry-detail-val" style="font-size: 1.2rem; font-weight: 800; color: var(--accent-emerald);">--</span>
+        <div style="position: relative; width: 100%; height: 160px; background-color: var(--card-bg-inner); border-radius: 8px; border: 1px solid var(--panel-border); overflow: hidden; padding: 4px; box-sizing: border-box;">
+          <canvas id="performance-graph" width="300" height="150" style="width: 100%; height: 100%; display: block;"></canvas>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.65rem; color: var(--text-muted);">
+          <span>60 Seconds History</span>
+          <div style="display: flex; gap: 12px; font-weight: 600;">
+            <span style="display: flex; align-items: center; gap: 4px;"><span style="display:inline-block; width:6px; height:6px; background:#00E676; border-radius:50%;"></span>CPU</span>
+            <span style="display: flex; align-items: center; gap: 4px;"><span style="display:inline-block; width:6px; height:6px; background:#00BFFF; border-radius:50%;"></span>RAM</span>
           </div>
-          
-          <div style="position: relative; height: 160px; width: 100%; background: rgba(0, 0, 0, 0.3); border-radius: 8px; border: 1px solid var(--panel-border); overflow: hidden; padding: 4px;">
-            <div style="position: absolute; top: 8px; right: 10px; font-size: 0.65rem; color: var(--text-muted); z-index: 10;">60 Seconds History</div>
-            <div style="position: absolute; top: 8px; left: 8px; font-size: 0.65rem; color: var(--text-muted); z-index: 10;">100%</div>
-            <div style="position: absolute; bottom: 8px; left: 8px; font-size: 0.65rem; color: var(--text-muted); z-index: 10;">0%</div>
-            <canvas id="telemetry-detail-chart" style="width: 100%; height: 100%; display: block;"></canvas>
+        </div>
+      </div>
+
+      <!-- Device Specs Card -->
+      <div class="glass-panel" style="padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+        <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--text-primary); margin: 0; border-bottom: 1px solid var(--panel-border); padding-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Outfit', sans-serif;">Device Specifications</h4>
+        <div class="resource-detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px;">
+          <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Processor</span>
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); word-break: break-word; overflow-wrap: break-word;" id="telemetry-device-processor">--</span>
           </div>
-          
-          <!-- Detailed Specs Grid -->
-          <div class="resource-detail-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid var(--panel-border); padding-top: 12px;">
-            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec1-label">Processor</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); word-break: break-word; overflow-wrap: break-word;" id="telemetry-spec1-val">--</span>
-            </div>
-            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec2-label">Cores</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec2-val">--</span>
-            </div>
-            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec3-label">Device</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec3-val">--</span>
-            </div>
-            <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;" id="telemetry-spec4-label">Hardware</span>
-              <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-spec4-val">--</span>
-            </div>
+          <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Cores</span>
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-device-cores">--</span>
+          </div>
+          <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Device Model</span>
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-device-model">--</span>
+          </div>
+          <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Manufacturer</span>
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);" id="telemetry-device-manufacturer">--</span>
+          </div>
+          <div class="detail-info-row" style="display: flex; flex-direction: column; gap: 2px; grid-column: span 2;">
+            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Graphics Engine</span>
+            <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary); word-break: break-word; overflow-wrap: break-word;" id="telemetry-device-gpu">--</span>
           </div>
         </div>
       </div>
@@ -1196,7 +1249,7 @@
 
   <!-- Bottom Navigation Bar -->
   <nav class="bottom-nav">
-    <button id="nav-dashboard" class="nav-item active" onclick="switchTab('dashboard')">
+    <button id="nav-dashboard" class="nav-item active" onclick="switchTab('dashboard')" data-tooltip="Dashboard">
       <div class="nav-icon-wrapper">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="7" height="9"/>
@@ -1205,10 +1258,9 @@
           <rect x="3" y="16" width="7" height="5"/>
         </svg>
       </div>
-      <span class="nav-label">Dashboard</span>
-    </button>
+      </button>
     
-    <button id="nav-productivity" class="nav-item" onclick="switchTab('productivity')">
+    <button id="nav-productivity" class="nav-item" onclick="switchTab('productivity')" data-tooltip="Productivity">
       <div class="nav-icon-wrapper">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -1217,20 +1269,18 @@
           <line x1="16" y1="17" x2="8" y2="17"/>
         </svg>
       </div>
-      <span class="nav-label">Productivity</span>
-    </button>
+      </button>
     
-    <button id="nav-codehelper" class="nav-item" onclick="switchTab('codehelper')">
+    <button id="nav-codehelper" class="nav-item" onclick="switchTab('codehelper')" data-tooltip="AetherAgent">
       <div class="nav-icon-wrapper">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="16 18 22 12 16 6"/>
           <polyline points="8 6 2 12 8 18"/>
         </svg>
       </div>
-      <span class="nav-label">AetherAgent</span>
-    </button>
+      </button>
     
-    <button id="nav-creative" class="nav-item" onclick="switchTab('creative')">
+    <button id="nav-creative" class="nav-item" onclick="switchTab('creative')" data-tooltip="Studio">
       <div class="nav-icon-wrapper">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 14.7255 3.09032 17.1962 4.85857 19C5.32622 19.475 6.00282 19.6139 6.61397 19.3516C6.8824 19.2364 7.17243 19.1765 7.47715 19.1765C8.31818 19.1765 9 19.8583 9 20.6993C9 21.4179 9.5821 22 10.3007 22H12Z"/>
@@ -1240,18 +1290,16 @@
           <circle cx="15.5" cy="14.5" r="1" fill="currentColor"/>
         </svg>
       </div>
-      <span class="nav-label">Studio</span>
-    </button>
+      </button>
     
-    <button id="nav-study" class="nav-item" onclick="switchTab('study')">
+    <button id="nav-study" class="nav-item" onclick="switchTab('study')" data-tooltip="Study">
       <div class="nav-icon-wrapper">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
           <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
         </svg>
       </div>
-      <span class="nav-label">Study</span>
-    </button>
+      </button>
     
     <button id="nav-performance" class="nav-item" onclick="switchTab('performance')">
       <div class="nav-icon-wrapper">
@@ -1261,8 +1309,7 @@
           <line x1="6" y1="20" x2="6" y2="14"/>
         </svg>
       </div>
-      <span class="nav-label">Telemetry</span>
-    </button>
+      </button>
   </nav>
 
   <!-- App Settings Modal -->
@@ -1285,32 +1332,14 @@
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px;">
-        <!-- Operation Mode Panel -->
-        <div class="flex-col" style="gap: 8px;">
-          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Operation Mode</h4>
-          <div style="display: flex; flex-direction: column; gap: 8px; background: var(--card-bg-inner); padding: 8px; border-radius: 6px; border: 1px solid var(--panel-border);">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span style="font-size:0.75rem; font-weight:600; color: var(--text-secondary);">Offline Standalone:</span>
-              <label class="switch">
-                <input type="checkbox" id="mode-standalone-checkbox" onchange="toggleOperationMode(this.checked)">
-                <span class="slider-switch"></span>
-              </label>
-            </div>
-            <div id="settings-api-host-container" style="display: none; flex-direction: column; gap: 4px; margin-top: 4px;">
-              <span style="font-size:0.65rem; color: var(--text-muted);">PC Companion Server URL:</span>
-              <input type="text" id="setting-api-base" class="input-glass" style="font-size:0.7rem; min-height: 28px; padding: 4px 8px; border-radius: 4px;" placeholder="e.g. http://192.168.1.100:49152">
-            </div>
-          </div>
-        </div>
-
         <!-- Model Manager Section -->
         <div class="flex-col" style="gap: 8px;">
-          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Local AI Models</h4>
-          <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="window.location.href='model-manager.html'">
+          <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Download Manager</h4>
+          <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="openModelManagerModal()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 15px; height: 15px; color: var(--accent-emerald);">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l-7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 2 0l7 4A2 2 0 0 0 21 16z"/>
             </svg>
-            <span>Manage Offline AI Models</span>
+            <span>Download Manager</span>
           </button>
         </div>
 
@@ -1346,8 +1375,7 @@
         <div class="flex-col" style="gap: 8px;">
           <h4 style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Local Diagnostics</h4>
           <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem;" onclick="resetLocalData()">Clear App Local Data</button>
-          <button class="btn-secondary" style="width: 100%; min-height: 38px; font-size: 0.8rem; margin-top: 4px;" onclick="showOnboardingAgain()">Run Feature Setup Survey</button>
-        </div>
+          </div>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px;">
@@ -1358,7 +1386,7 @@
   </div>
 
   <!-- Dedicated Full-screen Local Model Manager Modal -->
-  <div id="model-manager-modal" class="modal-overlay" style="display: none; z-index: 100001; background: rgba(5, 8, 7, 0.85); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);">
+  <div id="model-manager-modal" class="modal-overlay" style="display: none; z-index: 100001;">
     <div class="glass-panel modal-card" style="max-width: 480px; width: 92%; height: 85%; display: flex; flex-direction: column; justify-content: space-between; padding: 24px; box-sizing: border-box; border-radius: 16px; border: 1.5px solid var(--panel-border);">
       <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 12px; margin-bottom: 16px; flex-shrink: 0;">
         <h3 style="font-weight: 700; color: var(--accent-emerald); font-size: 1.2rem; margin: 0; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif;">
@@ -1367,7 +1395,7 @@
             <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
             <line x1="12" y1="22.08" x2="12" y2="12"/>
           </svg>
-          <span>Local AI Model Manager</span>
+          <span>Download Manager</span>
         </h3>
         <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;" onclick="closeModelManagerModal()">
           <svg style="width: 20px; height: 20px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -1376,7 +1404,13 @@
           </svg>
         </button>
       </div>
-
+ 
+      <!-- Category Tabs -->
+      <div class="segmented-control" style="margin-bottom: 12px; flex-shrink: 0;">
+        <button class="segment-btn active" id="dl-tab-models" onclick="switchDownloadTab('models')" style="flex: 1; text-align: center; justify-content: center; font-size: 0.75rem;">AI Models</button>
+        <button class="segment-btn" id="dl-tab-plugins" onclick="switchDownloadTab('plugins')" style="flex: 1; text-align: center; justify-content: center; font-size: 0.75rem;">Plugins</button>
+      </div>
+ 
       <!-- Scrollable list of models -->
       <div id="model-manager-list-container" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding-right: 4px;">
         <!-- Dynamic models rendered here -->
@@ -1385,9 +1419,11 @@
       <!-- Storage and Action Footer -->
       <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0;">
         <div style="display: flex; flex-direction: column; gap: 6px;">
-          <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text-secondary);">
-            <span>Device Storage: <b id="model-manager-storage-text">-- / -- GB Free</b></span>
-            <span id="model-manager-storage-percent">--%</span>
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; font-size: 0.75rem; color: var(--text-secondary); width: 100%;">
+            <div style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: normal;">
+              Device Storage: <b id="model-manager-storage-text" style="color: var(--text-primary);">--</b>
+            </div>
+            <div id="model-manager-storage-percent" style="font-weight: 700; color: var(--accent-emerald); margin-left: 8px; flex-shrink: 0;">--%</div>
           </div>
           <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; position: relative;">
             <div id="model-manager-storage-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan) 0%, var(--accent-emerald) 100%); border-radius: 4px; transition: width 0.3s ease;"></div>
@@ -1490,200 +1526,28 @@
   </div>
 
   <!-- Aether Document Scanner Viewport Overlay -->
-  <div id="aether-scanner-viewport" class="scanner-overlay" style="display: none; flex-direction: column; justify-content: stretch; padding: 0; background: #000000; color: #ffffff;">
-    <!-- Camera Shutter Flash Overlay -->
-    <div id="scanner-flash" class="flash-overlay"></div>
-
-    <!-- Viewfinder HUD (Capture Screen) -->
-    <div id="scanner-capture-screen" class="scanner-screen" style="display: flex; flex-direction: column; justify-content: space-between; width: 100%; height: 100%; padding: 0; box-sizing: border-box; position: relative;">
-      
-      <!-- Real Camera Feed (fullscreen background) -->
-      <video id="scanner-camera-feed" autoplay playsinline muted style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; z-index: 1;"></video>
-      <canvas id="scanner-tracking-canvas" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 5; pointer-events: none !important;"></canvas>
-      
-      <!-- Simulated Document Sheet under Viewfinder -->
-      <div id="simulated-document-target" class="document-sheet" style="z-index: 2;">
-        <div class="doc-header-sim"></div>
-        <div class="doc-text-skeleton-line" style="width: 80%;"></div>
-        <div class="doc-text-skeleton-line" style="width: 90%;"></div>
-        <div class="doc-text-skeleton-line" style="width: 70%;"></div>
-        <div class="doc-text-skeleton-line" style="width: 85%;"></div>
-        <div class="doc-text-skeleton-line" style="width: 60%;"></div>
-        <div class="doc-footer-sim"></div>
-      </div>
-      
-      <!-- Grid overlay -->
-      <div class="grid-helper" style="z-index: 3;"></div>
-      
-      <!-- Pulsing AI Edge Alignment Corners -->
-      <div class="edge-corners-box" style="z-index: 4;">
-        <div class="corner top-left"></div>
-        <div class="corner top-right"></div>
-        <div class="corner bottom-left"></div>
-        <div class="corner bottom-right"></div>
-        <div class="scanner-laser-line"></div>
-      </div>
-      
-      <!-- Top HUD bar (transparent overlay) - Close & Utilities -->
-      <div class="hud-header" style="position: absolute; top: 0; left: 0; right: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; padding: env(safe-area-inset-top, 24px) 16px 16px 16px; background: linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 100%); width: 100%; box-sizing: border-box;">
-        <!-- Close button (Left) -->
-        <button onclick="closeAetherScanner()" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.4); border: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-        
-        <!-- Right: Flashlight + Camera Switch (Icon only) -->
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <button id="scanner-flashlight-btn" onclick="toggleScannerFlashlight()" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.4); border: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);" title="Toggle Flashlight">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-          </button>
-          <button id="scanner-camera-toggle-btn" onclick="switchScannerCamera()" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,0.4); border: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);" title="Switch Camera">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M20.49 15a9 9 0 0 1-14.85 3.36L1 14"/></svg>
-          </button>
-        </div>
-      </div>
-      
-      <!-- Bottom HUD bar: 3-column layout → Import | Shutter (centered) | Batch Badge -->
-      <div class="hud-footer" style="position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; justify-items: center; padding: 16px 28px calc(env(safe-area-inset-bottom, 20px) + 16px) 28px; background: linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 100%); width: 100%; box-sizing: border-box;">
-        
-        <!-- Left: Import from Gallery -->
-        <div style="justify-self: start; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; width: 64px;" onclick="document.getElementById('fileInput').click()">
-          <div style="width: 44px; height: 44px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,0.6); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" style="width: 20px; height: 20px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          </div>
-        </div>
-        
-        <!-- Center: Shutter Button -->
-        <button id="scanner-shutter-btn" class="shutter-btn" onclick="captureScannerPage()" style="justify-self: center; width: 80px; height: 80px; border-radius: 50%; border: 4px solid #ffffff; background: rgba(255,255,255,0.18); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); cursor: pointer; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(255,255,255,0.25), 0 6px 30px rgba(0,0,0,0.5); transition: transform 0.1s ease, background 0.1s ease;"></button>
-        
-        <!-- Right: Batch Badge / Done -->
-        <div style="justify-self: end; width: 64px; display: flex; justify-content: flex-end;">
-          <div class="batch-badge-container" id="scanner-done-btn" onclick="goToReviewScreen()" style="display: none; cursor: pointer; position: relative;">
-            <img id="scanner-badge-thumbnail" src="" style="width: 52px; height: 52px; border-radius: 10px; object-fit: cover; border: 2px solid #ffffff; display: block; box-shadow: 0 2px 12px rgba(0,0,0,0.5);" />
-            <div class="batch-badge-count" id="scanner-page-count-badge" style="position: absolute; top: -8px; right: -8px; background: #10b981; color: #fff; font-size: 0.68rem; font-weight: 700; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid #000;">0</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Preview & Crop Screen -->
-    <div id="scanner-preview-screen" class="scanner-screen" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between;">
-      <div class="hud-header" style="margin-top: 0; padding: 0;">
-        <span class="hud-title" style="font-size:1rem; font-weight:700;" id="preview-page-indicator">Adjust Crop Boundaries</span>
-        <button class="btn-hud-close" onclick="closeAetherScanner()">×</button>
-      </div>
-
-      <div style="flex: 1; display: flex; gap: 16px; margin: 15px 0; align-items: center; position: relative; min-height: 0;">
-        <!-- Canvas view displaying captured page with crop lines -->
-        <div style="flex: 1; height: 100%; background: #000; border-radius: 12px; position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center; border: 1.5px solid rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);">
-          <canvas id="crop-canvas" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;"></canvas>
-        </div>
-
-        <!-- Floating vertical action column on the right -->
-        <div style="display: flex; flex-direction: column; gap: 12px; width: 56px; align-items: center; flex-shrink: 0;">
-          <button class="action-column-btn" onclick="rotatePreviewPage()" title="Rotate 90°">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-            <span style="font-size:0.55rem; font-weight:700; color:var(--text-secondary); margin-top:3px;">Rotate</span>
-          </button>
-          <button class="action-column-btn" onclick="retakePreviewPage()" title="Retake Snap">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-            <span style="font-size:0.55rem; font-weight:700; color:var(--text-secondary); margin-top:3px;">Retake</span>
-          </button>
-          <button class="action-column-btn" onclick="resetPreviewCrop()" title="Reset Crop">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/></svg>
-            <span style="font-size:0.55rem; font-weight:700; color:var(--text-secondary); margin-top:3px;">Reset</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Aspect Ratio Toolbar -->
-      <div style="display: flex; gap: 8px; justify-content: center; align-items: center; background: rgba(255,255,255,0.02); padding: 6px; border-radius: 8px; border: 1px solid var(--panel-border); margin-bottom: 12px; flex-shrink: 0;">
-        <span style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); margin-right: 4px;">RATIO</span>
-        <button class="chip-tab active" id="btn-aspect-free" onclick="setCropAspectLock('free')">Free</button>
-        <button class="chip-tab" id="btn-aspect-1-1" onclick="setCropAspectLock('1:1')">1:1</button>
-        <button class="chip-tab" id="btn-aspect-4-3" onclick="setCropAspectLock('4:3')">4:3</button>
-        <button class="chip-tab" id="btn-aspect-16-9" onclick="setCropAspectLock('16:9')">16:9</button>
-      </div>
-
-      <!-- Bottom controls: Thumbnails slider and review trigger -->
-      <div style="display: flex; flex-direction: column; gap: 14px; flex-shrink: 0;">
-        <!-- Thumbnail tray -->
-        <div style="display: flex; gap: 10px; overflow-x: auto; padding: 4px; scrollbar-width: none; align-items: center; -webkit-overflow-scrolling: touch;">
-          <div id="preview-thumbnails-container" style="display: flex; gap: 8px;"></div>
-          <!-- Add Page Card -->
-          <div onclick="addMorePagesToScanner()" style="flex: 0 0 60px; height: 80px; border: 2px dashed rgba(255, 255, 255, 0.2); border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; background: rgba(255,255,255,0.01); flex-shrink: 0;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:18px; height:18px; color:var(--text-muted);"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span style="font-size: 0.55rem; color: var(--text-muted); font-weight: 700; margin-top: 4px;">Add Page</span>
-          </div>
-        </div>
-
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 0.75rem; color: var(--text-muted);" id="preview-status-text">Adjust document cropping circles</span>
-          <button class="btn-neon" onclick="goToReviewScreen()" style="padding: 10px 20px; font-size: 0.8rem;">Review and Edit &gt;</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Review Screen -->
-    <div id="scanner-review-screen" class="scanner-screen" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between;">
-      <div class="hud-header" style="margin-top: 0; padding: 0;">
-        <span class="hud-title" style="font-size:1rem; font-weight:700;" id="review-page-indicator-title">Review Pages</span>
-        <button class="btn-hud-close" onclick="closeAetherScanner()">×</button>
-      </div>
-
-      <!-- Main Display for Selected Page -->
-      <div style="flex: 1; display: flex; justify-content: center; align-items: center; margin: 15px 0; background: #000; border-radius: 12px; border: 1px solid var(--panel-border); overflow: hidden; position: relative; min-height: 0;">
-        <img id="review-main-img" style="max-width: 100%; max-height: 100%; object-fit: contain; display: block;">
-        <span style="position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,0.6); padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; color: #fff;" id="review-current-index-label">1/2</span>
-      </div>
-
-      <!-- Actions and Finish -->
-      <div style="display: flex; flex-direction: column; gap: 14px; flex-shrink: 0;">
-        <!-- Horizontal scrollable review thumbnails -->
-        <div id="review-thumbnails-container" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch;"></div>
-
-        <!-- Filters & Page Actions Grid -->
-        <div style="display: flex; flex-direction: column; gap: 10px; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; border: 1px solid var(--panel-border); box-sizing: border-box; width: 100%;">
-          <!-- Filters selection -->
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Page Filter</span>
-            <div style="display: flex; gap: 8px; width: 100%;">
-              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px;" onclick="applyReviewFilter('original')">Original</button>
-              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px;" onclick="applyReviewFilter('grayscale')">Grayscale</button>
-              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px;" onclick="applyReviewFilter('color')">Color</button>
-            </div>
-          </div>
-          <!-- Edit Actions -->
-          <div style="display: flex; flex-direction: column; gap: 6px;">
-            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Edit / Manage Page</span>
-            <div style="display: flex; gap: 8px; width: 100%;">
-              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px; color: var(--accent-emerald); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.05);" onclick="adjustCropFromReview()">Adjust Crop</button>
-              <button class="scanner-utility-btn" style="flex: 1; min-height: 32px; color: #f43f5e; border-color: rgba(244, 63, 94, 0.3); background: rgba(244, 63, 94, 0.05);" onclick="deleteReviewPage()">Delete Page</button>
-            </div>
-          </div>
-        </div>
-
-        <button class="btn-neon btn-neon-cyan" onclick="goToSaveScreen()" style="width: 100%; padding: 12px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="width:16px; height:16px;"><polyline points="20 6 9 17 4 12"/></svg>
-          Finish Scan Batch
-        </button>
-      </div>
-    </div>
-
+  <div id="aether-scanner-viewport" class="scanner-overlay" style="display: none; z-index: 100000;">
+  
     <!-- Save Screen -->
-    <div id="scanner-save-screen" class="scanner-screen" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between;">
-      <div class="hud-header" style="margin-top: 0; padding: 0; margin-bottom: 15px;">
-        <span class="hud-title" style="font-size:1rem; font-weight:700;">Compile Scan Batch</span>
-        <button class="btn-hud-close" onclick="closeAetherScanner()">×</button>
+    <div id="scanner-save-screen" class="scanner-screen glass-panel" style="display: none; flex-direction: column; width: 100%; height: 100%; padding: 20px; box-sizing: border-box; justify-content: space-between; background: var(--glass-bg); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid var(--glass-border);">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-shrink: 0; width: 100%;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <button onclick="closeAetherScanner()" style="background: none; border: none; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 4px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <span style="font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 800; color: var(--text-primary);">Export</span>
+        </div>
+        <button onclick="closeAetherScanner()" style="background: rgba(255,255,255,0.06); border: none; color: var(--text-primary); border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 20px; transition: background 0.2s;">&times;</button>
       </div>
 
       <div style="flex: 1; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; padding-right: 4px; margin-bottom: 15px;">
         <!-- Preview Card -->
-        <div style="display: flex; gap: 14px; background: rgba(255,255,255,0.02); border: 1px solid var(--panel-border); border-radius: 12px; padding: 14px; align-items: center;">
+        <div style="display: flex; gap: 14px; background: var(--card-bg-inner); border: 1px solid var(--panel-border); border-radius: 12px; padding: 14px; align-items: center; box-shadow: inset 0 0 10px rgba(255,255,255,0.05);">
           <div style="width: 70px; height: 90px; background: #000; border-radius: 6px; border: 1px solid var(--panel-border); overflow: hidden; display: flex; justify-content: center; align-items: center; flex-shrink: 0;">
             <img id="save-preview-img" style="max-width: 100%; max-height: 100%; object-fit: contain;">
           </div>
           <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0;">
-            <span style="font-size:0.65rem; color:var(--text-muted); font-weight:700; text-transform:uppercase;">Document Name</span>
+            <span style="font-size:0.65rem; color:var(--text-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">Document Name</span>
             <div style="display: flex; align-items: center; gap: 6px; position: relative;">
               <input type="text" id="save-filename-input" class="input-glass" style="padding: 6px 30px 6px 10px; font-size: 0.85rem;" value="Scan_120626_1917">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px; color:var(--text-muted); position:absolute; right:10px; pointer-events:none;"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -1692,50 +1556,52 @@
           </div>
         </div>
 
+        <!-- Organize Pages Section -->
+        <div class="flex-col" style="gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">Organize Pages (Drag to Reorder)</span>
+            <span style="font-size:0.65rem; color:var(--text-muted);">Tap 'X' to delete</span>
+          </div>
+          <div id="preview-thumbnails-container" style="display: flex; gap: 10px; overflow-x: auto; padding: 4px 0 10px 0; -webkit-overflow-scrolling: touch; scroll-behavior: smooth;">
+            <!-- Thumbnails and "+" add button will be rendered here dynamically -->
+          </div>
+        </div>
+
         <!-- Format Selector -->
         <div class="flex-col" style="gap: 8px;">
           <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">File Type</span>
           <div style="display: flex; gap: 10px;">
-            <div id="save-format-pdf" class="format-chip active" onclick="selectSaveFormat('PDF')" style="flex:1; text-align:center; padding:10px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.8rem; font-weight:700; transition:all 0.2s;">PDF</div>
-            <div id="save-format-photo" class="format-chip" onclick="selectSaveFormat('PHOTO')" style="flex:1; text-align:center; padding:10px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.8rem; font-weight:700; transition:all 0.2s;">Photo</div>
+            <div id="save-format-pdf" class="format-chip active" onclick="selectSaveFormat('PDF')" style="flex:1; text-align:center; padding:10px; border-radius:8px; border:1px solid var(--panel-border); background:var(--card-bg-inner); cursor:pointer; font-size:0.8rem; font-weight:700; transition:all 0.2s;">PDF</div>
+            <div id="save-format-photo" class="format-chip" onclick="selectSaveFormat('PHOTO')" style="flex:1; text-align:center; padding:10px; border-radius:8px; border:1px solid var(--panel-border); background:var(--card-bg-inner); cursor:pointer; font-size:0.8rem; font-weight:700; transition:all 0.2s;">Photo</div>
           </div>
         </div>
 
         <!-- Size Compression Selector -->
-        <div class="flex-col" style="gap: 8px;">
-          <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">File Size</span>
+        <div class="flex-col" id="save-filesize-container" style="gap: 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">File Size</span>
+            <span id="estimated-file-size-label" style="font-size:0.7rem; color:var(--accent-cyan); font-weight:600;">(Estimated: ~0 KB)</span>
+          </div>
           <div style="display: flex; gap: 8px;">
-            <div id="save-size-orig" class="size-chip active" onclick="selectSaveSize('original')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Original</div>
-            <div id="save-size-med" class="size-chip" onclick="selectSaveSize('medium')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Medium</div>
-            <div id="save-size-small" class="size-chip" onclick="selectSaveSize('small')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.02); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Small</div>
+            <div id="save-size-high" class="size-chip" onclick="selectSaveSize('high')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:var(--card-bg-inner); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">High</div>
+            <div id="save-size-orig" class="size-chip active" onclick="selectSaveSize('original')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:var(--card-bg-inner); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Original</div>
+            <div id="save-size-med" class="size-chip" onclick="selectSaveSize('medium')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:var(--card-bg-inner); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Medium</div>
+            <div id="save-size-small" class="size-chip" onclick="selectSaveSize('small')" style="flex:1; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--panel-border); background:var(--card-bg-inner); cursor:pointer; font-size:0.75rem; font-weight:600; transition:all 0.2s;">Small</div>
           </div>
         </div>
 
         <!-- Simulated OneDrive/Share locations list -->
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary);">Save Destination</span>
-          
-          <div onclick="performSaveAction('share')" style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--panel-border); cursor:pointer; transition:background 0.2s;">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; color:var(--accent-cyan);"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v16"/></svg>
-              <span style="font-size: 0.8rem; font-weight:600;">Share Document</span>
-            </div>
-            <span style="font-size:0.7rem; color:var(--text-muted);">&gt;</span>
-          </div>
-
-          <div onclick="performSaveAction('onedrive')" style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:rgba(255,255,255,0.02); border-radius:8px; border:1px solid var(--panel-border); cursor:pointer; transition:background 0.2s;">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; height:16px; color:var(--accent-purple);"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
-              <span style="font-size: 0.8rem; font-weight:600;">Save to OneDrive</span>
-            </div>
-            <span style="font-size:0.7rem; color:var(--text-muted);">&gt;</span>
+          <div id="save-destination-list" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Rendered dynamically in JS -->
           </div>
         </div>
       </div>
 
-      <button class="btn-neon" onclick="performSaveAction('phone')" style="width: 100%; padding: 12px; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px; height:16px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-        Save to Phone (Downloads)
+      <button class="btn-neon" onclick="performSaveAction('phone')" style="width: 100%; padding: 14px; font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; background: #10b981 !important; color: #fff !important; border: none !important; box-shadow: 0 4px 15px rgba(16,185,129,0.3) !important;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px; height:18px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Save to Downloads
       </button>
     </div>
 
@@ -1766,7 +1632,7 @@
   </div>
 
   <!-- Error Alert Modal -->
-  <div id="error-alert-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:100000; align-items:center; justify-content:center; padding: 20px; box-sizing: border-box;">
+  <div id="error-alert-modal" class="modal-overlay" style="display:none; z-index:100000;">
     <div class="glass-panel" style="width:100%; max-width:340px; padding:20px; display:flex; flex-direction:column; gap:16px; border-color:var(--accent-rose); box-shadow: 0 0 25px rgba(244,63,94,0.3); box-sizing: border-box; border-radius: 14px; background: rgba(15, 11, 25, 0.95); backdrop-filter: blur(20px);">
       <h4 style="color:var(--accent-rose); font-weight:700; display:flex; align-items:center; gap:8px; font-size:1.05rem; margin: 0;">
         <svg style="width: 20px; height: 20px; stroke: var(--accent-rose); fill: none; flex-shrink: 0;" viewBox="0 0 24 24" stroke-width="2.5">
@@ -1781,8 +1647,155 @@
     </div>
   </div>
 
+  
+  <!-- Dedicated Full-screen App User Guide Modal -->
+  <div id="app-guide-modal" class="modal-overlay" style="display: none; z-index: 100002;">
+    <div class="glass-panel modal-card" style="width: 100%; height: 100%; max-width: none; display: flex; flex-direction: column; justify-content: flex-start; padding: 0; box-sizing: border-box; border-radius: 0; border: none; top: 0; left: 0; background: var(--glass-bg);">
+      
+      <!-- Screen 0: Guide Index -->
+      <div id="guide-screen-index" style="display: flex; flex-direction: column; height: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 16px 24px; border-bottom: 1px solid var(--panel-border); flex-shrink: 0; background: rgba(0,0,0,0.2);">
+          <h3 style="font-weight: 700; color: var(--accent-cyan); font-size: 1.2rem; margin: 0; display: flex; align-items: center; gap: 8px; font-family: 'Outfit', sans-serif;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width: 20px; height: 20px;">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+            <span>AetherDesk User Guide</span>
+          </h3>
+          <button style="background: none; border: none; color: var(--text-muted); cursor: pointer;" onclick="window.closeAppGuideModal()">
+            <svg style="width: 24px; height: 24px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+        </div>
+
+        <div style="flex: 1; overflow-y: auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px;">
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 8px;">Select a topic to learn more about AetherDesk's offline capabilities.</p>
+          
+          <button class="btn-secondary" style="justify-content: flex-start; padding: 16px; font-size: 0.95rem;" onclick="window.showGuideTopic('getting-started')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent-cyan);margin-right:12px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            1. Getting Started & UI Basics
+          </button>
+          <button class="btn-secondary" style="justify-content: flex-start; padding: 16px; font-size: 0.95rem;" onclick="window.showGuideTopic('local-ai')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent-emerald);margin-right:12px;"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l-7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 2 0l7 4A2 2 0 0 0 21 16z"></path></svg>
+            2. Local AI & CodeHelper
+          </button>
+          <button class="btn-secondary" style="justify-content: flex-start; padding: 16px; font-size: 0.95rem;" onclick="window.showGuideTopic('universal-viewer')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--accent-gold);margin-right:12px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            3. Universal File Viewer
+          </button>
+          <button class="btn-secondary" style="justify-content: flex-start; padding: 16px; font-size: 0.95rem;" onclick="window.showGuideTopic('scanner')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:#a855f7;margin-right:12px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            4. Aether Scanner
+          </button>
+          <button class="btn-secondary" style="justify-content: flex-start; padding: 16px; font-size: 0.95rem;" onclick="window.showGuideTopic('privacy')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--text-muted);margin-right:12px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            5. Storage & Privacy
+          </button>
+        </div>
+      </div>
+
+      <!-- Screen 1: Getting Started -->
+      <div id="guide-screen-getting-started" class="guide-content-screen" style="display: none; flex-direction: column; height: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--panel-border); background: rgba(0,0,0,0.2);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button class="btn-icon" onclick="window.backToGuideIndex()" style="background: transparent; border: none; color: var(--text-primary); padding: 0;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:24px; height:24px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
+            <h3 style="font-weight: 700; color: var(--accent-cyan); font-size: 1.1rem; margin: 0;">Getting Started</h3>
+          </div>
+        </div>
+        <div style="flex: 1; overflow-y: auto; padding: 24px; line-height: 1.6; color: var(--text-secondary); font-size: 0.9rem;">
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Welcome to AetherDesk Mobile</h4>
+          <p style="margin-bottom: 16px;">This application brings desktop-class utility tools directly to your mobile device, engineered specifically to operate <b>100% offline</b>.</p>
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Navigation & UI</h4>
+          <p style="margin-bottom: 16px;"><b>The Dashboard:</b> The main screen provides a systemic overview. You can view telemetry (RAM usage, battery) and quick-launch modules.</p>
+          <p style="margin-bottom: 16px;"><b>Bottom Navigation:</b> The five icons at the bottom instantly switch between core views. <i>Pro Tip:</i> Long-press any icon to reveal a floating tooltip explaining its function.</p>
+          <p style="margin-bottom: 16px;"><b>Settings:</b> The gear icon in the top right opens App Settings. Here you can toggle Light/Dark mode and access the Download Manager.</p>
+        </div>
+      </div>
+
+      <!-- Screen 2: Local AI -->
+      <div id="guide-screen-local-ai" class="guide-content-screen" style="display: none; flex-direction: column; height: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--panel-border); background: rgba(0,0,0,0.2);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button class="btn-icon" onclick="window.backToGuideIndex()" style="background: transparent; border: none; color: var(--text-primary); padding: 0;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:24px; height:24px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
+            <h3 style="font-weight: 700; color: var(--accent-emerald); font-size: 1.1rem; margin: 0;">Local AI & CodeHelper</h3>
+          </div>
+        </div>
+        <div style="flex: 1; overflow-y: auto; padding: 24px; line-height: 1.6; color: var(--text-secondary); font-size: 0.9rem;">
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">On-Device Large Language Models</h4>
+          <p style="margin-bottom: 16px;">AetherDesk can run advanced LLMs directly on your phone's processor. This means zero latency, no subscription fees, and absolute privacy.</p>
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Downloading Models</h4>
+          <p style="margin-bottom: 16px;">Navigate to <b>Settings > Download Manager > AI Models</b>. You will find quantized versions of Gemma, Llama, and Mistral. Tap download to save them to your device storage. Be aware these files are several gigabytes in size.</p>
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Chatting with CodeHelper</h4>
+          <p style="margin-bottom: 16px;">Open the AI Chat tab. Select your downloaded model from the top dropdown. The AI remembers your conversation context. If it starts acting confused or you want to start a new topic, tap the "Clear Chat" brush icon to flush its memory.</p>
+        </div>
+      </div>
+
+      <!-- Screen 3: Universal Viewer -->
+      <div id="guide-screen-universal-viewer" class="guide-content-screen" style="display: none; flex-direction: column; height: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--panel-border); background: rgba(0,0,0,0.2);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button class="btn-icon" onclick="window.backToGuideIndex()" style="background: transparent; border: none; color: var(--text-primary); padding: 0;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:24px; height:24px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
+            <h3 style="font-weight: 700; color: var(--accent-gold); font-size: 1.1rem; margin: 0;">Universal File Viewer</h3>
+          </div>
+        </div>
+        <div style="flex: 1; overflow-y: auto; padding: 24px; line-height: 1.6; color: var(--text-secondary); font-size: 0.9rem;">
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Decoding Files Offline</h4>
+          <p style="margin-bottom: 16px;">The Universal Viewer natively decodes Code (.py, .js, .c), Text (.md, .txt), Jupyter Notebooks (.ipynb), and Media files without requiring internet.</p>
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Handling Office Documents</h4>
+          <p style="margin-bottom: 16px;">Parsing `.docx` (Microsoft Word) or `.xlsx` (Excel) files requires heavy Javascript libraries. To keep the app fast, these are optional downloads.</p>
+          <p style="margin-bottom: 16px;">To view these files, go to <b>Settings > Download Manager > Offline Engines</b>. Download Mammoth.js for Word documents or SheetJS for Spreadsheets. Once downloaded, the Viewer will automatically utilize these engines when opening Office files.</p>
+        </div>
+      </div>
+
+      <!-- Screen 4: Scanner -->
+      <div id="guide-screen-scanner" class="guide-content-screen" style="display: none; flex-direction: column; height: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--panel-border); background: rgba(0,0,0,0.2);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button class="btn-icon" onclick="window.backToGuideIndex()" style="background: transparent; border: none; color: var(--text-primary); padding: 0;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:24px; height:24px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
+            <h3 style="font-weight: 700; color: #a855f7; font-size: 1.1rem; margin: 0;">Aether Scanner</h3>
+          </div>
+        </div>
+        <div style="flex: 1; overflow-y: auto; padding: 24px; line-height: 1.6; color: var(--text-secondary); font-size: 0.9rem;">
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Document Digitization</h4>
+          <p style="margin-bottom: 16px;">The Scanner uses native Android ML Kit algorithms to detect document edges, crop precisely, and apply image enhancement filters.</p>
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Batch Processing</h4>
+          <p style="margin-bottom: 16px;">When you finish a scan session, you are taken to the "Compile Scan Batch" screen. From here, you can tap the <b>[+] Add</b> button to re-open the camera. Any new scans will be seamlessly appended to your existing batch.</p>
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Organizing & Deleting</h4>
+          <p style="margin-bottom: 16px;">Tap the red 'X' on any thumbnail to delete it. If you delete all thumbnails from a batch, the batch is cleared and you will safely be returned to the Dashboard.</p>
+        </div>
+      </div>
+
+      <!-- Screen 5: Privacy -->
+      <div id="guide-screen-privacy" class="guide-content-screen" style="display: none; flex-direction: column; height: 100%;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--panel-border); background: rgba(0,0,0,0.2);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button class="btn-icon" onclick="window.backToGuideIndex()" style="background: transparent; border: none; color: var(--text-primary); padding: 0;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:24px; height:24px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
+            <h3 style="font-weight: 700; color: var(--text-muted); font-size: 1.1rem; margin: 0;">Storage & Privacy</h3>
+          </div>
+        </div>
+        <div style="flex: 1; overflow-y: auto; padding: 24px; line-height: 1.6; color: var(--text-secondary); font-size: 0.9rem;">
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Total Offline Guarantee</h4>
+          <p style="margin-bottom: 16px;">AetherDesk is architected to be disconnected. Everything from AI inference to PDF parsing is executed on your local hardware. There are no cloud servers and no telemetry data leaks.</p>
+          <h4 style="color: var(--text-primary); margin-bottom: 12px;">Managing Device Storage</h4>
+          <p style="margin-bottom: 16px;">Because all tools are local, they require significant storage space. A large language model can take up 4GB+ of space.</p>
+          <p style="margin-bottom: 16px;">You are completely in control. Open the Download Manager to uninstall any model or offline engine you no longer need. Uninstalling an engine instantly deletes it from local storage, freeing up space immediately.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <script src="lib/sortable.min.js" defer></script>
   <script src="model-manager.js" defer></script>
+  <script src="lib/highlight.min.js" defer></script>
   <script src="app.js" defer></script>
   <script>
     // Initialize Sortable on preview thumbnails when scanner UI is ready
@@ -1790,9 +1803,18 @@
       const thumbnailContainer = document.getElementById('preview-thumbnails-container');
       if (thumbnailContainer) {
         new Sortable(thumbnailContainer, {
-          animation: 150,
+          draggable: ".preview-thumbnail-item:not(.add-card)",
+          filter: ".add-card",
+          animation: 200,
+          direction: "horizontal",
+          delay: 50,
+          delayOnTouchOnly: true,
+          touchStartThreshold: 3,
+          swapThreshold: 1,
+          ghostClass: "sortable-ghost",
+          chosenClass: "sortable-chosen",
+          dragClass: "sortable-drag",
           onEnd: function(evt) {
-            // Call a function to reorder internal page arrays
             if (window.reorderPagesAfterDrag) {
               reorderPagesAfterDrag(evt.oldIndex, evt.newIndex);
             }
@@ -1809,5 +1831,65 @@
       }, false);
     });
   </script>
+
+  <!-- NATIVE CRASH RECOVERY MODAL -->
+  <div id="native-crash-modal" class="modal-overlay" style="display: none; z-index: 100003;">
+    <div class="glass-panel modal-card" style="max-width: 400px; display: flex; flex-direction: column; padding: 24px; border: 1px solid rgba(239, 68, 68, 0.3);">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="width:24px;height:24px; flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <h3 style="color: #ef4444; margin: 0; font-family: 'Outfit', sans-serif; font-size: 1.25rem;">Recovered from Native Crash</h3>
+      </div>
+      <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px; line-height: 1.5;">The application unexpectedly terminated during the last session due to an underlying Android OS or native SDK exception.</p>
+      <div style="background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; border: 1px solid var(--panel-border); margin-bottom: 20px; max-height: 150px; overflow-y: auto;">
+        <code id="native-crash-log-text" style="color: #94a3b8; font-size: 0.75rem; white-space: pre-wrap; font-family: monospace; word-break: break-word;"></code>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button class="btn-secondary" style="flex: 1; padding: 10px;" onclick="copyNativeCrashLog()">Copy Log</button>
+        <button class="btn-neon" style="background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid #ef4444; flex: 1; padding: 10px;" onclick="document.getElementById('native-crash-modal').style.display='none';">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- UNIVERSAL FILE VIEWER MODAL -->
+  <div id="universal-reader-modal" class="modal-overlay" style="display: none; z-index: 100005;">
+    <div style="width: 100%; height: 100%; display: flex; flex-direction: column;">
+      
+      <!-- Top Action Bar -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: rgba(0,0,0,0.4); border-bottom: 1px solid var(--panel-border); flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+        <button class="btn-icon" onclick="window.closeUniversalReader()" style="background: transparent; border: none; color: var(--text-primary); padding: 8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:24px; height:24px;"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <div style="flex: 1; margin: 0 16px; overflow: hidden; display: flex; flex-direction: column;">
+          <h3 id="uv-filename" style="margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Inter', sans-serif;">Filename.ext</h3>
+          <span id="uv-filetype" style="font-size: 0.75rem; color: var(--accent-cyan); text-transform: uppercase; font-family: monospace;">MIME/TYPE</span>
+        </div>
+        <button class="btn-icon" onclick="window.showGlobalToast('Sharing not implemented yet.', 'info')" style="background: transparent; border: none; color: var(--text-primary); padding: 8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+        </button>
+      </div>
+
+      <!-- Dynamic Lens Content Area -->
+      <div id="uv-content-area" style="flex: 1; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; background: #000;">
+        <!-- Lenses will be dynamically injected here via JS -->
+      </div>
+      
+    </div>
+  </div>
+
+
+  <!-- Universal Reader Modal -->
+  <div id="universal-reader-modal" class="glass-panel" style="display:none; position:fixed; z-index:999999; top:0; left:0; right:0; bottom:0; background: var(--bg-primary); flex-direction:column; overflow:hidden;">
+    <div style="display:flex; align-items:center; padding: 16px; border-bottom: 1px solid var(--panel-border); background: var(--header-bg);">
+      <button class="icon-btn" onclick="document.getElementById('universal-reader-modal').style.display='none'" style="margin-right: 12px; background: none; border: none; color: var(--text-primary);">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <div id="uv-header-title" style="flex:1; font-size: 1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Document</div>
+    </div>
+    <div id="uv-content-area" style="flex:1; overflow:auto; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+      <!-- Viewer Lenses Will Be Injected Here -->
+    </div>
+  </div>
+
 </body>
 </html>

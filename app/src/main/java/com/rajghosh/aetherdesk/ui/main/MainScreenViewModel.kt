@@ -1,9 +1,9 @@
-package com.example.aetherdesk.ui.main
+package com.rajghosh.aetherdesk.ui.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.aetherdesk.data.DataRepository
-import com.example.aetherdesk.ui.main.MainScreenUiState.Success
+import com.rajghosh.aetherdesk.data.DataRepository
+import com.rajghosh.aetherdesk.ui.main.MainScreenUiState.Success
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch

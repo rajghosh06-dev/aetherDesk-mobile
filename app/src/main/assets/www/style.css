@@ -12,23 +12,27 @@
   --text-secondary: #334155;
   --text-muted: #64748b;
   --panel-border: rgba(16, 185, 129, 0.12);
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(16, 185, 129, 0.16);
+  --glass-bg: rgba(255, 255, 255, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.65);
   --glow-emerald: 0 4px 16px rgba(16, 185, 129, 0.08);
   --glow-gold: 0 4px 16px rgba(217, 119, 6, 0.06);
-  --card-shadow: 0 4px 20px rgba(15, 23, 42, 0.04);
+  --card-shadow: 0 4px 24px rgba(31, 38, 135, 0.08);
   
-  --header-bg: rgba(248, 250, 252, 0.75);
-  --nav-bg: rgba(255, 255, 255, 0.85);
-  --input-bg: rgba(255, 255, 255, 0.8);
-  --input-border: rgba(16, 185, 129, 0.15);
-  --console-bg: #f1f5f9;
+  --header-bg: rgba(248, 250, 252, 0.5);
+  --nav-bg: rgba(255, 255, 255, 0.55);
+  --input-bg: rgba(255, 255, 255, 0.6);
+  --input-border: rgba(255, 255, 255, 0.8);
+  --console-bg: rgba(255, 255, 255, 0.5);
   --console-text: #0f766e;
-  --card-bg-inner: rgba(0, 0, 0, 0.03);
-  --subtab-bg: rgba(0, 0, 0, 0.04);
-  --chat-user-bg: rgba(0, 0, 0, 0.04);
-  --blob-opacity: 0.18;
-  --notif-bg: rgba(255, 255, 255, 0.95);
+  --card-bg-inner: rgba(255, 255, 255, 0.4);
+  --subtab-bg: rgba(255, 255, 255, 0.5);
+  --chat-user-bg: rgba(255, 255, 255, 0.6);
+  --blob-opacity: 0.45;
+  --notif-bg: rgba(255, 255, 255, 0.75);
+  --segmented-bg: rgba(0, 0, 0, 0.05);
+  --segmented-btn-active-bg: #ffffff;
+  --segmented-btn-active-color: var(--accent-emerald);
+  --segmented-border: rgba(0, 0, 0, 0.06);
 }
 
 body.dark-theme {
@@ -45,30 +49,34 @@ body.dark-theme {
   --text-secondary: #cbd5e1;
   --text-muted: #64748b;
   --panel-border: rgba(16, 185, 129, 0.08);
-  --glass-bg: rgba(16, 185, 129, 0.015);
-  --glass-border: rgba(16, 185, 129, 0.12);
+  --glass-bg: rgba(20, 25, 22, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.08);
   --glow-emerald: 0 0 12px rgba(16, 185, 129, 0.25);
   --glow-gold: 0 0 12px rgba(245, 158, 11, 0.2);
-  --card-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+  --card-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   
-  --header-bg: rgba(10, 15, 13, 0.65);
-  --nav-bg: rgba(10, 15, 13, 0.85);
-  --input-bg: rgba(0, 0, 0, 0.35);
-  --input-border: rgba(255, 255, 255, 0.08);
+  --header-bg: rgba(10, 15, 13, 0.45);
+  --nav-bg: rgba(10, 15, 13, 0.55);
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.1);
   --console-bg: rgba(0, 0, 0, 0.45);
   --console-text: #10b981;
   --card-bg-inner: rgba(0, 0, 0, 0.25);
   --subtab-bg: rgba(0, 0, 0, 0.3);
   --chat-user-bg: rgba(0, 0, 0, 0.35);
-  --blob-opacity: 0.08;
-  --notif-bg: rgba(10, 15, 13, 0.96);
+  --blob-opacity: 0.2;
+  --notif-bg: rgba(10, 15, 13, 0.85);
+  --segmented-bg: rgba(255, 255, 255, 0.06);
+  --segmented-btn-active-bg: rgba(255, 255, 255, 0.12);
+  --segmented-btn-active-color: var(--accent-emerald);
+  --segmented-border: rgba(255, 255, 255, 0.08);
 }
 
 .app-logo-theme {
   transition: filter 0.3s ease;
 }
-body.light-theme .app-logo-theme {
-  filter: invert(1) hue-rotate(180deg) brightness(0.3) drop-shadow(0 0 6px rgba(0,0,0,0.15)) !important;
+body:not(.dark-theme) .app-logo-theme {
+  filter: drop-shadow(0 4px 12px rgba(16, 185, 129, 0.35)) !important;
 }
 
 * {
@@ -171,9 +179,9 @@ body {
   height: calc(64px + env(safe-area-inset-top, 0px));
   padding: env(safe-area-inset-top, 0px) 16px 0 16px;
   background: var(--header-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--panel-border);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1.5px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -226,6 +234,7 @@ body {
   border-radius: 20px;
   border: 1px solid var(--panel-border);
   cursor: pointer;
+  max-width: 110px;
 }
 
 .badge-dot {
@@ -233,6 +242,7 @@ body {
   height: 6px;
   border-radius: 50%;
   background: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .badge-dot.active-wifi {
@@ -246,9 +256,11 @@ body {
 }
 
 .badge-text {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 600;
   color: var(--text-secondary);
+  line-height: 1.1;
+  white-space: normal;
 }
 
 /* App Container */
@@ -297,13 +309,27 @@ body {
 /* Glass panel & cards */
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border: 1.5px solid var(--glass-border);
   border-radius: 14px;
   padding: 16px;
   box-shadow: var(--card-shadow);
   will-change: transform, box-shadow;
+}
+
+.glass-panel.clickable-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.glass-panel.clickable-card:hover {
+  border-color: var(--accent-emerald) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  transform: translateY(-2px);
+}
+.glass-panel.clickable-card:active {
+  transform: translateY(0);
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
 .card {
@@ -496,9 +522,9 @@ body {
   height: calc(56px + env(safe-area-inset-bottom, 10px));
   padding-bottom: env(safe-area-inset-bottom, 10px);
   background: var(--nav-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-top: 1px solid var(--panel-border);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-top: 1.5px solid var(--glass-border);
   position: fixed;
   bottom: 0;
   left: 0;
@@ -524,6 +550,42 @@ body {
   padding: 2px 0;
   outline: none;
   min-width: 0;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  position: relative;
+}
+
+.nav-item::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 120%;
+  left: 50%;
+  transform: translateX(-50%) scale(0.8);
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  z-index: 200;
+}
+
+body.dark-theme .nav-item::after {
+  background: rgba(255, 255, 255, 0.9);
+  color: #000;
+}
+
+.nav-item.show-tooltip::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) scale(1);
 }
 
 .nav-icon-wrapper {
@@ -600,7 +662,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--bg-primary);
+  background: radial-gradient(circle at 50% 0%, #ffffff 0%, #f2fcf5 60%, #fff8eb 100%);
   z-index: 100000;
   opacity: 1;
   transition: opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1);
@@ -714,20 +776,20 @@ body {
   flex-shrink: 0;
 }
 
-/* Modals */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.65);
-  backdrop-filter: blur(8px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
-  z-index: 1000;
+  z-index: 100000;
 }
 
 .modal-card {
@@ -993,10 +1055,10 @@ video::-webkit-media-controls-enclosure {
 
 .segmented-control {
   display: flex;
-  background: var(--subtab-bg);
+  background: var(--segmented-bg);
   padding: 3px;
   border-radius: 8px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--segmented-border);
   width: 100%;
 }
 .segment-btn {
@@ -1017,11 +1079,14 @@ video::-webkit-media-controls-enclosure {
   min-height: 32px;
   outline: none;
 }
+.segment-btn:hover {
+  color: var(--text-primary);
+}
 .segment-btn.active {
-  background: var(--bg-secondary);
-  color: var(--accent-emerald);
-  border: 1px solid var(--panel-border);
-  box-shadow: var(--card-shadow);
+  background: var(--segmented-btn-active-bg) !important;
+  color: var(--segmented-btn-active-color) !important;
+  border: 1px solid var(--segmented-border) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06) !important;
 }
 
 /* Bottom Interactive Widgets */
@@ -1124,9 +1189,7 @@ video::-webkit-media-controls-enclosure {
   opacity: 0.99;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  display: block;
   overflow: hidden;
   font-family: 'Outfit', sans-serif;
   color: #f8fafc;
@@ -1479,8 +1542,10 @@ video::-webkit-media-controls-enclosure {
 /* System Telemetry Interactive Chips */
 .resource-chip {
   flex: 0 0 105px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--panel-border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid var(--glass-border);
   border-radius: 12px;
   padding: 10px;
   display: flex;
@@ -1522,10 +1587,15 @@ video::-webkit-media-controls-enclosure {
 
 /* Scanner Screens and Multi-step controls */
 .scanner-screen {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+  display: none;
+  flex-direction: column !important;
+  overflow: hidden !important;
 }
 
 .action-column-btn {
@@ -1666,4 +1736,221 @@ video::-webkit-media-controls-enclosure {
   box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
   opacity: 1;
   transform: translateY(-1px);
+}
+
+#error-alert-modal {
+  background-color: var(--bg-dark) !important;
+}
+
+#settings-modal .modal-card,
+#model-manager-modal .modal-card,
+#error-alert-modal .modal-card {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 0 !important;
+  border: none !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+ 
+ 
+/* Full-Screen Modals Patch 2 */
+#settings-modal,
+#model-manager-modal,
+#onboarding-overlay,
+#error-alert-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  z-index: 9999 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
+#settings-modal .modal-card,
+#model-manager-modal .modal-card,
+#onboarding-overlay .glass-panel,
+#error-alert-modal .modal-card {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  overflow-y: auto !important;
+  background-color: transparent !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 24px 24px 24px !important;
+}
+
+/* Error Alert Modal Readability */
+#error-alert-modal {
+  background-color: #1E1E1E !important;
+}
+#error-alert-modal, #error-alert-modal * {
+  color: #FFFFFF !important;
+}
+
+/* Enforce parent overlay layouts to fill viewport bounds flat */
+#settings-modal, #model-manager-modal, #feature-setup-modal, #onboarding-overlay, #error-alert-modal {
+    display: none;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background-color: var(--glass-bg) !important;
+    backdrop-filter: blur(24px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+    z-index: 9999 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+}
+
+/* Inner absolute layout resets to bypass structural flex distortions */
+#settings-modal .modal-card, #model-manager-modal .modal-card, #feature-setup-modal .modal-card, #onboarding-overlay .modal-card, #error-alert-modal .modal-card {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    background-color: transparent !important;
+    overflow-y: auto !important;
+    box-shadow: none !important;
+    padding: calc(env(safe-area-inset-top, 0px) + 24px) 24px 24px 24px !important;
+}
+
+/* Validate App Clean Alert Contrast Layout */
+#error-alert-modal p, #error-alert-modal h3, #error-alert-modal h4, #error-alert-modal span {
+    color: #FFFFFF !important;
+}
+#save-preview-img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+}
+
+
+.model-name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--accent-emerald);
+  margin: 0;
+}
+.model-size {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+
+/* Immersive full-screen styles for Document Scanner screens */
+#scanner-save-screen,
+#scanner-creations-screen {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: var(--glass-bg) !important;
+    backdrop-filter: blur(24px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    padding-top: calc(env(safe-area-inset-top, 40px) + 20px) !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    flex-direction: column !important;
+}
+
+/* Inner Cards Layout Fix */
+#settings-modal .modal-card, #model-manager-modal .modal-card, #scanner-save-screen .modal-card, #feature-setup-modal .modal-card {
+    display: block !important;
+    width: 100% !important;
+    min-height: 100% !important;
+}
+
+#scanner-save-screen {
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+
+.btn-secondary.active { border-color: var(--accent-emerald) !important; color: var(--accent-emerald) !important; }
+
+
+/* Universal File Viewer Phase 3: Syntax Lens */
+#uv-content-area pre {
+    margin: 0 !important;
+    padding: 16px !important;
+    background: #1e1e1e !important; /* VS Code dark theme default background */
+    overflow: auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    box-sizing: border-box;
+    text-align: left;
+}
+#uv-content-area code {
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 0.85rem !important;
+    white-space: pre !important;
+    color: #d4d4d4; /* Default text color for dark themes if hljs doesn't apply it */
+    line-height: 1.5;
+}
+
+
+.nav-tooltip-toast {
+    position: absolute;
+    bottom: 70px; /* Above the nav bar */
+    background: rgba(0, 0, 0, 0.85);
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 10000;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.nav-tooltip-toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+#scanner-save-screen, #scanner-creations-screen {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+}
+
+/* SortableJS drag and drop styles */
+.sortable-ghost {
+  opacity: 0.3 !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+  border: 2px dashed var(--accent-emerald) !important;
+}
+.sortable-chosen {
+  transform: scale(1.05);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  border-color: var(--accent-emerald) !important;
+}
+.sortable-drag {
+  opacity: 0.85;
 }

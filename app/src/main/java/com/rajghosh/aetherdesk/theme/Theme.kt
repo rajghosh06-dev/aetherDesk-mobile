@@ -1,4 +1,4 @@
-package com.example.aetherdesk.theme
+package com.rajghosh.aetherdesk.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

@@ -1,4 +1,4 @@
-package com.example.aetherdesk
+package com.rajghosh.aetherdesk
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -14,6 +14,11 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import org.json.JSONObject
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -27,10 +32,75 @@ import java.io.IOException
 class MainActivity : ComponentActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserRequestCode = 1
-    private var myWebView: WebView? = null
+    var myWebView: WebView? = null
+    lateinit var scannerLauncher: ActivityResultLauncher<IntentSenderRequest>
+    private var telemetryTimer: java.util.Timer? = null
+    private var lastCpuTime: Long = 0
+    private var lastUptime: Long = 0
+
+    private fun getBase64FromUri(uri: Uri): String? {
+        return try {
+            val inputStream = contentResolver.openInputStream(uri)
+            val bytes = inputStream?.readBytes()
+            inputStream?.close()
+            if (bytes != null) {
+                val base64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                "data:image/jpeg;base64,$base64"
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        
+        val sharedPreferences = getSharedPreferences("AetherDeskPrefs", android.content.Context.MODE_PRIVATE)
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val sw = java.io.StringWriter()
+            throwable.printStackTrace(java.io.PrintWriter(sw))
+            val stackTrace = sw.toString()
+            sharedPreferences.edit().putString("last_native_crash", stackTrace).commit()
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         super.onCreate(savedInstanceState)
+
+        scannerLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+                val pdfUri = scanResult?.pdf?.uri?.toString()
+                
+                val pagesList = mutableListOf<String>()
+                scanResult?.pages?.forEach { page ->
+                    getBase64FromUri(page.imageUri)?.let { base64 ->
+                        pagesList.add(base64)
+                    }
+                }
+                
+                val jsonResult = JSONObject()
+                jsonResult.put("status", "success")
+                pdfUri?.let { jsonResult.put("pdfUri", it) }
+                val pagesArray = JSONArray()
+                pagesList.forEach { pagesArray.put(it) }
+                jsonResult.put("pages", pagesArray)
+                
+                val jsonString = jsonResult.toString()
+                myWebView?.post {
+                    myWebView?.evaluateJavascript("window.onNativeScanComplete('$jsonString')", null)
+                }
+            } else if (result.resultCode == Activity.RESULT_CANCELED) {
+                val jsonResult = JSONObject()
+                jsonResult.put("status", "cancelled")
+                val jsonString = jsonResult.toString()
+                myWebView?.post {
+                    myWebView?.evaluateJavascript("window.onNativeScanComplete('$jsonString')", null)
+                }
+            }
+        }
 
         // Initial edge-to-edge setup.
         // Using light/dark scrims depending on preferred appearance.
@@ -61,6 +131,7 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize(),
                 onSetup = { webView ->
                     this.myWebView = webView
+                    startLiveTelemetry(webView)
                     WebView.setWebContentsDebuggingEnabled(true)
                     webView.clearCache(true)
 
@@ -108,6 +179,18 @@ class MainActivity : ComponentActivity() {
                             handler?.cancel()
                             view?.evaluateJavascript("console.error('WebView SSL Error');", null)
                         }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            val prefs = getSharedPreferences("AetherDeskPrefs", android.content.Context.MODE_PRIVATE)
+                            val crashLog = prefs.getString("last_native_crash", null)
+                            if (crashLog != null) {
+                                val encodedLog = android.util.Base64.encodeToString(crashLog.toByteArray(), android.util.Base64.NO_WRAP)
+                                view?.evaluateJavascript("setTimeout(function() { if (window.showNativeCrashModal) { window.showNativeCrashModal(atob('$encodedLog')); } }, 1500);", null)
+                                prefs.edit().remove("last_native_crash").apply()
+                            }
+                        }
+
                     }
 
                     webView.webChromeClient = object : WebChromeClient() {
@@ -180,6 +263,7 @@ class MainActivity : ComponentActivity() {
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
         } else {
             @Suppress("DEPRECATION")
             permissions.addAll(listOf(android.Manifest.permission.READ_EXTERNAL_STORAGE, android.Manifest.permission.WRITE_EXTERNAL_STORAGE))
@@ -208,7 +292,59 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun startLiveTelemetry(webView: WebView) {
+        telemetryTimer?.cancel()
+        telemetryTimer = java.util.Timer()
+        
+        lastCpuTime = android.os.Process.getElapsedCpuTime()
+        lastUptime = android.os.SystemClock.uptimeMillis()
+        
+        val numCores = Runtime.getRuntime().availableProcessors().toDouble().coerceAtLeast(1.0)
+        
+        telemetryTimer?.scheduleAtFixedRate(object : java.util.TimerTask() {
+            override fun run() {
+                try {
+                    val currentCpuTime = android.os.Process.getElapsedCpuTime()
+                    val currentUptime = android.os.SystemClock.uptimeMillis()
+                    
+                    val cpuDelta = currentCpuTime - lastCpuTime
+                    val uptimeDelta = currentUptime - lastUptime
+                    
+                    var cpuPercent = 0.0
+                    if (uptimeDelta > 0) {
+                        cpuPercent = (cpuDelta.toDouble() / (uptimeDelta.toDouble() * numCores)) * 100.0
+                    }
+                    
+                    lastCpuTime = currentCpuTime
+                    lastUptime = currentUptime
+                    
+                    cpuPercent = cpuPercent.coerceIn(0.0, 100.0)
+                    
+                    val actManager = getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                    val memInfo = android.app.ActivityManager.MemoryInfo()
+                    actManager.getMemoryInfo(memInfo)
+                    
+                    val totalRam = memInfo.totalMem.toDouble()
+                    val availRam = memInfo.availMem.toDouble()
+                    val usedRam = totalRam - availRam
+                    val ramPercent = (usedRam / totalRam) * 100.0
+                    
+                    val finalCpu = cpuPercent.toInt()
+                    val finalRam = ramPercent.toInt()
+                    
+                    webView.post {
+                        webView.evaluateJavascript("if(window.updateLiveGraph) window.updateLiveGraph($finalCpu, $finalRam);", null)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }, 1000L, 1000L)
+    }
+
     override fun onDestroy() {
+        telemetryTimer?.cancel()
+        telemetryTimer = null
         myWebView?.destroy()
         myWebView = null
         super.onDestroy()

@@ -118,6 +118,55 @@
       cursor: pointer;
       align-self: flex-end;
     }
+    .download-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 0 16px;
+      margin-top: 16px;
+    }
+    .dl-tab {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .dl-tab.active {
+      border-color: var(--accent-emerald);
+      color: var(--accent-emerald);
+      background: rgba(16, 185, 129, 0.1);
+    }
+    .storage-bar-container {
+      margin: 16px;
+      padding: 16px;
+      background: var(--card-bg-inner, rgba(255, 255, 255, 0.03));
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+    }
+    .storage-text-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .storage-progress {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .storage-progress-fill {
+      height: 100%;
+      background: var(--accent-emerald);
+      width: 0%;
+      transition: width 0.3s;
+    }
   </style>
 </head>
 <body class="dark-theme">
@@ -127,10 +176,26 @@
         <polyline points="15 18 9 12 15 6"/>
       </svg>
     </button>
-    <h1 class="title">AI Model Setup</h1>
+    <h1 class="title">Download Manager</h1>
   </div>
 
-  <div class="model-grid" id="model-grid">
+  <div class="storage-bar-container">
+    <div class="storage-text-row">
+      <span id="model-manager-storage-text">Calculating...</span>
+      <span id="model-manager-storage-percent">0%</span>
+    </div>
+    <div class="storage-progress">
+      <div class="storage-progress-fill" id="model-manager-storage-bar"></div>
+    </div>
+  </div>
+
+  <div class="download-tabs">
+    <button id="dl-tab-models" class="dl-tab active" onclick="switchDownloadTab('models')">AI Models</button>
+    <button id="dl-tab-engines" class="dl-tab" onclick="switchDownloadTab('engines')">Offline Engines</button>
+    <button id="dl-tab-plugins" class="dl-tab" onclick="switchDownloadTab('plugins')">Plugins</button>
+  </div>
+
+  <div class="model-grid" id="model-manager-list-container">
     <!-- Cards will be injected here by model-manager.js -->
   </div>
 

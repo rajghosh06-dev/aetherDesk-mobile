@@ -1,4 +1,4 @@
-package com.example.aetherdesk.data
+package com.rajghosh.aetherdesk.data
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow

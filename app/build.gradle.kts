@@ -5,10 +5,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.aetherdesk"
+    namespace = "com.rajghosh.aetherdesk"
     compileSdk = 36
     defaultConfig {
-        applicationId = "com.example.aetherdesk"
+        applicationId = "com.rajghosh.aetherdesk"
         minSdk = 34
         targetSdk = 36
         versionCode = 1
@@ -93,4 +93,8 @@ dependencies {
 
     // Google ML Kit Text Recognition
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
+    
+    // Google ML Kit Document Scanner
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    implementation("com.google.mediapipe:tasks-genai:0.10.14")
 }

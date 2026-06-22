@@ -1,4 +1,4 @@
-package com.example.aetherdesk.ui.main
+package com.rajghosh.aetherdesk.ui.main
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,8 +17,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
-import com.example.aetherdesk.data.DefaultDataRepository
-import com.example.aetherdesk.theme.AetherDeskTheme
+import com.rajghosh.aetherdesk.data.DefaultDataRepository
+import com.rajghosh.aetherdesk.theme.AetherDeskTheme
 
 @Composable
 fun MainScreen(

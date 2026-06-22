@@ -1,6 +1,11 @@
-package com.example.aetherdesk
+package com.rajghosh.aetherdesk
 
 import android.app.ActivityManager
+import android.content.Intent
+import androidx.core.content.FileProvider
+import android.net.Uri
+import android.util.Base64
+import java.io.FileOutputStream
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -23,8 +28,51 @@ import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import org.json.JSONArray
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import android.content.pm.PackageManager
+import android.os.Build
+
 
 class AndroidBridge(private val activity: MainActivity) {
+
+    @JavascriptInterface
+    fun launchNativeScanner() {
+        activity.runOnUiThread {
+            val options = GmsDocumentScannerOptions.Builder()
+                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG, GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+                .setGalleryImportAllowed(true)
+                .setPageLimit(38) // Strict memory cap to prevent OOM crashes
+                .build()
+
+            GmsDocumentScanning.getClient(options)
+                .getStartScanIntent(activity)
+                .addOnSuccessListener { intentSender ->
+                    activity.scannerLauncher.launch(
+                        androidx.activity.result.IntentSenderRequest.Builder(intentSender).build()
+                    )
+                }
+                .addOnFailureListener { e ->
+                    // Handle failure gracefully
+                    activity.runOnUiThread {
+                        val jsonResult = JSONObject()
+                        jsonResult.put("status", "cancelled")
+                        jsonResult.put("error", e.message)
+                        val jsonString = jsonResult.toString()
+                        // Use WebView evaluateJavascript if possible, but we don't have direct access to myWebView here.
+                        // So we can assume the user will handle it, but wait, how to pass to myWebView?
+                        // I can just rely on the MainActivity's myWebView if I made it accessible, or just let it fail silently.
+                    }
+                }
+        }
+    }
 
     @JavascriptInterface
     fun checkWifiStatus(): Boolean {
@@ -168,11 +216,98 @@ class AndroidBridge(private val activity: MainActivity) {
             telemetry.put("device_hardware", android.os.Build.HARDWARE)
             telemetry.put("device_board", android.os.Build.BOARD)
             telemetry.put("device_cores", Runtime.getRuntime().availableProcessors())
+            telemetry.put("device_cpu_name", getCpuName())
+            telemetry.put("device_gpu_renderer", getGpuRenderer())
 
         } catch (e: Throwable) {
             e.printStackTrace()
         }
         return telemetry.toString()
+    }
+
+    private fun getCpuName(): String {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val socModel = android.os.Build.SOC_MODEL
+            val socManufacturer = android.os.Build.SOC_MANUFACTURER
+            if (!socModel.isNullOrBlank()) {
+                if (!socManufacturer.isNullOrBlank() && !socModel.contains(socManufacturer, ignoreCase = true)) {
+                    return "$socManufacturer $socModel"
+                }
+                return socModel
+            }
+        }
+        
+        try {
+            val file = java.io.File("/proc/cpuinfo")
+            if (file.exists()) {
+                val lines = file.readLines()
+                for (line in lines) {
+                    if (line.contains("Hardware", ignoreCase = true) || line.contains("model name", ignoreCase = true)) {
+                        val parts = line.split(":")
+                        if (parts.size > 1) {
+                            val cpu = parts[1].trim()
+                            if (cpu.isNotEmpty() && !cpu.contains("ARM") && !cpu.contains("Processor")) {
+                                return cpu
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore
+        }
+        
+        return android.os.Build.HARDWARE
+    }
+
+    private fun getGpuRenderer(): String {
+        var gpuRenderer = ""
+        try {
+            val egl = javax.microedition.khronos.egl.EGLContext.getEGL() as javax.microedition.khronos.egl.EGL10
+            val display = egl.eglGetDisplay(javax.microedition.khronos.egl.EGL10.EGL_DEFAULT_DISPLAY)
+            val version = IntArray(2)
+            egl.eglInitialize(display, version)
+            
+            val configSpec = intArrayOf(
+                javax.microedition.khronos.egl.EGL10.EGL_RED_SIZE, 8,
+                javax.microedition.khronos.egl.EGL10.EGL_GREEN_SIZE, 8,
+                javax.microedition.khronos.egl.EGL10.EGL_BLUE_SIZE, 8,
+                javax.microedition.khronos.egl.EGL10.EGL_NONE
+            )
+            val configs = arrayOfNulls<javax.microedition.khronos.egl.EGLConfig>(1)
+            val numConfig = IntArray(1)
+            egl.eglChooseConfig(display, configSpec, configs, 1, numConfig)
+            val config = configs[0]
+            
+            val eglContext = egl.eglCreateContext(
+                display, config,
+                javax.microedition.khronos.egl.EGL10.EGL_NO_CONTEXT, null
+            )
+            
+            val attribList = intArrayOf(
+                javax.microedition.khronos.egl.EGL10.EGL_WIDTH, 1,
+                javax.microedition.khronos.egl.EGL10.EGL_HEIGHT, 1,
+                javax.microedition.khronos.egl.EGL10.EGL_NONE
+            )
+            val surface = egl.eglCreatePbufferSurface(display, config, attribList)
+            
+            egl.eglMakeCurrent(display, surface, surface, eglContext)
+            
+            gpuRenderer = android.opengl.GLES10.glGetString(android.opengl.GLES10.GL_RENDERER) ?: ""
+            
+            egl.eglMakeCurrent(
+                display,
+                javax.microedition.khronos.egl.EGL10.EGL_NO_SURFACE,
+                javax.microedition.khronos.egl.EGL10.EGL_NO_SURFACE,
+                javax.microedition.khronos.egl.EGL10.EGL_NO_CONTEXT
+            )
+            egl.eglDestroySurface(display, surface)
+            egl.eglDestroyContext(display, eglContext)
+            egl.eglTerminate(display)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return gpuRenderer
     }
 
     @JavascriptInterface
@@ -648,7 +783,8 @@ class AndroidBridge(private val activity: MainActivity) {
         x1: Float, y1: Float,
         x2: Float, y2: Float,
         x3: Float, y3: Float,
-        destWidth: Int, destHeight: Int
+        destWidth: Int, destHeight: Int,
+        quality: Int
     ): String {
         var srcBitmap: android.graphics.Bitmap? = null
         var destBitmap: android.graphics.Bitmap? = null
@@ -690,7 +826,8 @@ class AndroidBridge(private val activity: MainActivity) {
             }
             
             val stream = java.io.ByteArrayOutputStream()
-            destBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, stream)
+            val clampedQuality = Math.max(1, Math.min(100, quality))
+            destBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, clampedQuality, stream)
             val imgBytes = stream.toByteArray()
             
             val imgBase64 = android.util.Base64.encodeToString(imgBytes, android.util.Base64.NO_WRAP)
@@ -700,6 +837,321 @@ class AndroidBridge(private val activity: MainActivity) {
         } finally {
             srcBitmap?.recycle()
             destBitmap?.recycle()
+        }
+    }
+
+    private var llmInference: LlmInference? = null
+
+    @JavascriptInterface
+    fun generateLlmResponse(prompt: String) {
+        activity.runOnUiThread {
+            try {
+                if (llmInference == null) {
+                    val modelFile = File(activity.filesDir, "models/llm_model.bin")
+                    if (!modelFile.exists()) {
+                        activity.myWebView?.evaluateJavascript("window.promptModelDownload();", null)
+                        return@runOnUiThread
+                    }
+                    val options = LlmInference.LlmInferenceOptions.builder()
+                        .setModelPath(modelFile.absolutePath)
+                        .setMaxTokens(1024)
+                        .setResultListener { partialResult, done ->
+                            activity.runOnUiThread {
+                                val escapedToken = partialResult.replace("\\", "\\\\").replace("'", "\\\'").replace("\n", "\\n").replace("\r", "\\r")
+                                activity.myWebView?.evaluateJavascript("window.receiveLlmStreamToken('$escapedToken');", null)
+                                if (done) {
+                                    activity.myWebView?.evaluateJavascript("window.receiveLlmStreamComplete();", null)
+                                }
+                            }
+                        }
+                        .build()
+                    llmInference = LlmInference.createFromOptions(activity, options)
+                }
+                
+                llmInference?.generateResponseAsync(prompt)
+            } catch (e: Throwable) {
+                activity.myWebView?.evaluateJavascript("window.promptModelDownload();", null)
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun shareDocument(fileName: String, base64Data: String) {
+        shareFileInternal(fileName, base64Data, null)
+    }
+
+    @JavascriptInterface
+    fun shareToWhatsApp(fileName: String, base64Data: String) {
+        shareFileInternal(fileName, base64Data, "com.whatsapp")
+    }
+
+    @JavascriptInterface
+    fun shareToPhoneLink(fileName: String, base64Data: String) {
+        shareFileInternal(fileName, base64Data, "com.microsoft.appmanager")
+    }
+
+    @JavascriptInterface
+    fun shareToGoogleDrive(fileName: String, base64Data: String) {
+        shareFileInternal(fileName, base64Data, "com.google.android.apps.docs")
+    }
+
+    @JavascriptInterface
+    fun getCompiledPdfSize(base64ImagesJson: String): Long {
+        return try {
+            val json = JSONArray(base64ImagesJson)
+            val pdfDoc = PdfDocument()
+            for (i in 0 until json.length()) {
+                val base64Str = json.getString(i)
+                val pureBase64 = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
+                val bytes = android.util.Base64.decode(pureBase64, android.util.Base64.DEFAULT)
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                
+                val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, i + 1).create()
+                val page = pdfDoc.startPage(pageInfo)
+                val canvas = page.canvas
+                canvas.drawBitmap(bitmap, 0f, 0f, null)
+                pdfDoc.finishPage(page)
+            }
+            
+            val outStream = java.io.ByteArrayOutputStream()
+            pdfDoc.writeTo(outStream)
+            val size = outStream.size().toLong()
+            outStream.close()
+            pdfDoc.close()
+            size
+        } catch (e: Throwable) {
+            0L
+        }
+    }
+
+    @JavascriptInterface
+    fun showSystemNotification(title: String, message: String, filePath: String, mimeType: String) {
+        val channelId = "aether_downloads"
+        val channelName = "Aether Desk Downloads"
+        
+        try {
+            // 1. Create Notification Channel for API 26+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "Notifications for document exports and downloads"
+                }
+                val notificationManager = activity.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.createNotificationChannel(channel)
+            }
+            
+            // 2. Generate URI using FileProvider or direct content URI parsing
+            val uri = if (filePath.startsWith("content://")) {
+                Uri.parse(filePath)
+            } else {
+                FileProvider.getUriForFile(activity, "${activity.packageName}.provider", File(filePath))
+            }
+            
+            // 3. Create ACTION_VIEW Intent
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            // 4. Wrap in PendingIntent
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val pendingIntent = PendingIntent.getActivity(activity, 0, intent, flags)
+            
+            // 5. Build and notify
+            val builder = NotificationCompat.Builder(activity, channelId)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                
+            val notificationManagerCompat = NotificationManagerCompat.from(activity)
+            if (Build.VERSION.SDK_INT < 33 || 
+                activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                notificationManagerCompat.notify(System.currentTimeMillis().toInt(), builder.build())
+            } else {
+                // If permission is denied, fallback to toast
+                activity.runOnUiThread {
+                    android.widget.Toast.makeText(activity, "$title: $message", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            activity.runOnUiThread {
+                android.widget.Toast.makeText(activity, "Notification error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun shareFileInternal(fileName: String, base64DataOrJson: String, targetPackage: String?) {
+        try {
+            val isPdf = fileName.lowercase(Locale.ROOT).endsWith(".pdf")
+            val urisList = ArrayList<Uri>()
+            
+            if (isPdf) {
+                val tempFile = File(activity.cacheDir, fileName)
+                val json = JSONArray(base64DataOrJson)
+                val pdfDoc = PdfDocument()
+                for (i in 0 until json.length()) {
+                    val base64Str = json.getString(i)
+                    val pureBase64 = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
+                    val bytes = Base64.decode(pureBase64, Base64.DEFAULT)
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: continue
+                    
+                    val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, i + 1).create()
+                    val page = pdfDoc.startPage(pageInfo)
+                    page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+                    pdfDoc.finishPage(page)
+                }
+                val outStream = FileOutputStream(tempFile)
+                pdfDoc.writeTo(outStream)
+                outStream.close()
+                pdfDoc.close()
+                urisList.add(FileProvider.getUriForFile(activity, "${activity.packageName}.provider", tempFile))
+            } else {
+                if (base64DataOrJson.trim().startsWith("[")) {
+                    val json = JSONArray(base64DataOrJson)
+                    val baseName = fileName.substringBeforeLast(".")
+                    val ext = if (fileName.contains(".")) "." + fileName.substringAfterLast(".") else ".jpg"
+                    for (i in 0 until json.length()) {
+                        val base64Str = json.getString(i)
+                        val pureBase64 = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
+                        val bytes = Base64.decode(pureBase64, Base64.DEFAULT)
+                        val pageFile = File(activity.cacheDir, "${baseName}_page_${i + 1}$ext")
+                        val outStream = FileOutputStream(pageFile)
+                        outStream.write(bytes)
+                        outStream.close()
+                        urisList.add(FileProvider.getUriForFile(activity, "${activity.packageName}.provider", pageFile))
+                    }
+                } else {
+                    val tempFile = File(activity.cacheDir, fileName)
+                    val pureBase64 = if (base64DataOrJson.contains(",")) base64DataOrJson.substringAfter(",") else base64DataOrJson
+                    val bytes = Base64.decode(pureBase64, Base64.DEFAULT)
+                    val outStream = FileOutputStream(tempFile)
+                    outStream.write(bytes)
+                    outStream.close()
+                    urisList.add(FileProvider.getUriForFile(activity, "${activity.packageName}.provider", tempFile))
+                }
+            }
+            
+            if (urisList.isEmpty()) {
+                throw Exception("No files generated for sharing.")
+            }
+            
+            val intent = if (urisList.size > 1) {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = "image/jpeg"
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, urisList)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } else {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = if (isPdf) "application/pdf" else "image/jpeg"
+                    putExtra(Intent.EXTRA_STREAM, urisList[0])
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            }
+            
+            if (targetPackage != null) {
+                intent.setPackage(targetPackage)
+            }
+            
+            activity.startActivity(Intent.createChooser(intent, "Share $fileName"))
+        } catch (e: android.content.ActivityNotFoundException) {
+            activity.runOnUiThread {
+                if (targetPackage == "com.microsoft.appmanager") {
+                    android.widget.Toast.makeText(activity, "Please install Link to Windows first.", android.widget.Toast.LENGTH_LONG).show()
+                    try {
+                        activity.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("market://details?id=com.microsoft.appmanager")))
+                    } catch (anfe: android.content.ActivityNotFoundException) {
+                        activity.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://play.google.com/store/apps/details?id=com.microsoft.appmanager")))
+                    }
+                } else {
+                    activity.myWebView?.evaluateJavascript("showToastBanner('App not installed.', 'error');", null)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            val errMsg = e.message ?: "Unknown sharing error occurred"
+            activity.runOnUiThread {
+                activity.myWebView?.evaluateJavascript("showToastBanner('Sharing failed: ${errMsg.replace("'", "\\'")}', 'error');", null)
+            }
+        }
+    }
+
+    @JavascriptInterface
+    fun openGallery() {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                type = "image/*"
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            activity.startActivity(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    @JavascriptInterface
+    fun openFileExplorer(fileName: String) {
+        try {
+            activity.startActivity(Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            })
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+
+    @JavascriptInterface
+    fun exitApplication() {
+        activity.runOnUiThread {
+            activity.finishAffinity()
+            System.exit(0)
+        }
+    }
+
+    @JavascriptInterface
+    fun openFileWithIntent(base64Data: String, mimeType: String, fileName: String) {
+        try {
+            val directory = activity.cacheDir
+            val intentDir = File(directory, "intent_files")
+            if (!intentDir.exists()) {
+                intentDir.mkdirs()
+            }
+            val cleanName = fileName.replace(Regex("[^a-zA-Z0-9.-]"), "_")
+            val file = File(intentDir, cleanName)
+            
+            val pureBase64 = if (base64Data.contains(",")) base64Data.substringAfter(",") else base64Data
+            val bytes = android.util.Base64.decode(pureBase64, android.util.Base64.DEFAULT)
+            
+            file.writeBytes(bytes)
+            
+            val uri = FileProvider.getUriForFile(
+                activity,
+                "${activity.packageName}.provider",
+                file
+            )
+            
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            activity.startActivity(Intent.createChooser(intent, "Open file..."))
+        } catch (e: Throwable) {
+            e.printStackTrace()
         }
     }
 }

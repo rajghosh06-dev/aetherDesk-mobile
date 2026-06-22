@@ -1,5 +1,73 @@
 // AetherDesk Mobile Controller Script
 
+window.addEventListener('error', function(e) {
+  if (typeof showToastBanner === 'function') {
+    showToastBanner(`Error: ${e.message} (${e.filename}:${e.lineno})`, "error");
+  }
+});
+
+window.addEventListener('unhandledrejection', function(e) {
+  if (typeof showToastBanner === 'function') {
+    showToastBanner(`Promise Rejected: ${e.reason}`, "error");
+  }
+});
+
+window.checkWifiSetup = function() {
+    const status = navigator.onLine ? "Connected" : "Offline";
+    console.log("Network Status: " + status);
+    if (window.AndroidBridge && window.AndroidBridge.showToast) {
+        window.AndroidBridge.showToast("Network Status: " + status);
+    } else {
+        if (typeof addNotification === "function") {
+            addNotification("Network Status: " + status, "info");
+        } else {
+            alert("Network Status: " + status);
+        }
+    }
+};
+
+window.onNativeScanComplete = function(resultJson) {
+    console.log("onNativeScanComplete fired with JSON data");
+    try {
+        const result = JSON.parse(resultJson);
+        if (result && result.pages) {
+            const formattedPages = result.pages.map(page => {
+                if (!page.startsWith('data:image')) {
+                    return 'data:image/jpeg;base64,' + page;
+                }
+                return page;
+            });
+
+            window.scannerBatchPages = (window.scannerBatchPages || []).concat(formattedPages);
+
+            // Sync with local arrays so the rest of the application sees the pages
+            formattedPages.forEach(page => {
+                scannerBatchPages.push(page);
+                scannerBatchPagesFullRes.push(page);
+                scannerPageCrops.push([
+                    { x: 0.02, y: 0.02 },
+                    { x: 0.98, y: 0.02 },
+                    { x: 0.98, y: 0.98 },
+                    { x: 0.02, y: 0.98 }
+                ]);
+                scannerPageFilters.push("original");
+            });
+
+            // Failsafe for black box preview
+            let previewImg = document.getElementById('save-preview-img');
+            if (previewImg && window.scannerBatchPages.length > 0) {
+                previewImg.src = window.scannerBatchPages[0];
+            }
+
+            if (typeof goToSaveScreen === "function") {
+                goToSaveScreen();
+            }
+        }
+    } catch (e) {
+        console.error("Error parsing native scan result:", e);
+    }
+};
+
 window.handleAndroidBack = function() {
   const modelManagerModal = document.getElementById("model-manager-modal");
   if (modelManagerModal && modelManagerModal.style.display !== "none") {
@@ -99,7 +167,8 @@ function initApp() {
 
   try {
     updateNetworkStatus();
-    console.log("Network status updated.");
+    setInterval(updateNetworkStatus, 3000);
+    console.log("Network status updated and continuous polling started.");
   } catch (e) {
     console.error("Error in updateNetworkStatus: ", e);
   }
@@ -439,7 +508,7 @@ function simulateModelDownload(modelId, btn) {
 }
 
 function uninstallOnboardingModel(modelId, btn) {
-  if (confirm("Are you sure you want to uninstall and remove this model?")) {
+  showErrorAlert("Uninstall Model", "Are you sure you want to uninstall and remove this model?", "Uninstall", () => {
     let downloaded = [];
     try {
       downloaded = JSON.parse(localStorage.getItem("downloaded_models")) || [];
@@ -458,7 +527,7 @@ function uninstallOnboardingModel(modelId, btn) {
     try {
       renderSettingsModelManager();
     } catch(e) {}
-  }
+  });
 }
 
 function finishOnboarding(skipped = false) {
@@ -496,10 +565,13 @@ function showOnboardingAgain() {
 }
 
 function resetLocalData() {
-  if (confirm("Are you sure you want to clear all local tasks, notes, and onboarding data? This will reset the app.")) {
+  showErrorAlert("Reset App Data", "Are you sure? This resets the app.", "OK", () => {
     localStorage.clear();
+    if (window.indexedDB) {
+      window.indexedDB.deleteDatabase("AetherDB");
+    }
     location.reload();
-  }
+  });
 }
 
 
@@ -535,7 +607,8 @@ function switchTab(tabId) {
       setTimeout(initWidgetCanvas, 100);
   } else if (tabId === "performance") {
       setTimeout(() => {
-        selectTelemetryResource(currentTelemetryResource);
+        initDeviceSpecs();
+        if (window.drawPerformanceGraph) window.drawPerformanceGraph();
       }, 100);
   }
 }
@@ -632,6 +705,9 @@ function fetchPhysicalDeviceSpecs() {
     console.warn("Failed to read deviceSpecs from localStorage", e);
   }
 
+  let processor = "";
+  let gpu = "";
+
   if (window.AndroidBridge && window.AndroidBridge.getDeviceTelemetry) {
     try {
       const data = JSON.parse(window.AndroidBridge.getDeviceTelemetry());
@@ -639,36 +715,36 @@ function fetchPhysicalDeviceSpecs() {
       brand = data.device_brand || brand;
       hardware = data.device_hardware || hardware;
       cores = data.device_cores || cores;
+      if (data.device_cpu_name) processor = data.device_cpu_name;
+      if (data.device_gpu_renderer) gpu = data.device_gpu_renderer;
       isRealBridge = true;
     } catch(e) {
       console.warn("Failed to parse device telemetry for specs:", e);
     }
   }
   
-  // Resolve processor name and GPU name based on hardware info
-  let processor = "Qualcomm Snapdragon CPU";
-  let gpu = "Adreno Graphics Engine";
-  
-  const hwLower = hardware.toLowerCase();
-  const modelLower = model.toLowerCase();
-  
-  if (hwLower.includes("goldfish") || hwLower.includes("ranchu") || modelLower.includes("sdk_gphone")) {
-    processor = "Android x86_64 Virtual CPU";
-    gpu = "SwiftShader Emulator GPU";
-    brand = "Google";
-    model = "Android Emulator";
-  } else if (hwLower.includes("qcom") || hwLower.includes("msm") || hwLower.includes("sdm") || modelLower.includes("nord ce4")) {
-    processor = "Qualcomm Snapdragon Octa-Core";
-    gpu = "Qualcomm Adreno GPU";
-  } else if (hwLower.includes("mt") || hwLower.includes("mediatek")) {
-    processor = "MediaTek Dimensity / Helio Core";
-    gpu = "ARM Mali GPU Core";
-  } else if (hwLower.includes("exynos")) {
-    processor = "Samsung Exynos Octa-Core";
-    gpu = "Samsung Xclipse / ARM Mali GPU";
-  } else {
-    processor = `${brand} ${hardware.toUpperCase()}`;
-    gpu = "Integrated Mobile GPU";
+  if (!processor || !gpu) {
+    const hwLower = hardware.toLowerCase();
+    const modelLower = model.toLowerCase();
+    
+    if (hwLower.includes("goldfish") || hwLower.includes("ranchu") || modelLower.includes("sdk_gphone")) {
+      processor = processor || "Android x86_64 Virtual CPU";
+      gpu = gpu || "SwiftShader Emulator GPU";
+      brand = "Google";
+      model = "Android Emulator";
+    } else if (hwLower.includes("qcom") || hwLower.includes("msm") || hwLower.includes("sdm") || modelLower.includes("nord ce4")) {
+      processor = processor || "Qualcomm Snapdragon Octa-Core";
+      gpu = gpu || "Qualcomm Adreno GPU";
+    } else if (hwLower.includes("mt") || hwLower.includes("mediatek")) {
+      processor = processor || "MediaTek Dimensity / Helio Core";
+      gpu = gpu || "ARM Mali GPU Core";
+    } else if (hwLower.includes("exynos")) {
+      processor = processor || "Samsung Exynos Octa-Core";
+      gpu = gpu || "Samsung Xclipse / ARM Mali GPU";
+    } else {
+      processor = processor || `${brand} ${hardware.toUpperCase()}`;
+      gpu = gpu || "Integrated Mobile GPU";
+    }
   }
   
   physicalDeviceSpecs = {
@@ -692,19 +768,10 @@ function fetchPhysicalDeviceSpecs() {
 }
 
 function updateTelemetry() {
-  let cpu = 10;
-  let ram = 45;
-  let gpu = 5;
-  let vram = 20;
-  let temp = 42;
-  
   if (window.AndroidBridge && window.AndroidBridge.getDeviceTelemetry) {
     try {
       const dataStr = window.AndroidBridge.getDeviceTelemetry();
       const data = JSON.parse(dataStr);
-      
-      cpu = data.cpu_usage;
-      ram = data.ram_percentage;
       
       document.getElementById("spec-cpu-val").textContent = `${data.cpu_usage}%`;
       document.getElementById("spec-ram-val").textContent = `${data.ram_percentage}%`;
@@ -718,22 +785,13 @@ function updateTelemetry() {
         document.getElementById("spec-storage-sub").textContent = `${data.storage_used} used`;
       }
       document.getElementById("spec-vram-val").textContent = data.ram_avail;
-      
-      // VRAM free simulation based on RAM total/used
-      const usedG = parseFloat(data.ram_used);
-      const totalG = parseFloat(data.ram_total);
-      if (!isNaN(usedG) && !isNaN(totalG) && totalG > 0) {
-        vram = Math.round((usedG / totalG) * 100);
-      }
     } catch (e) {
       console.error("Error updating telemetry: ", e);
     }
   } else {
     // Fallback simulated stats
-    cpu = 8 + Math.floor(Math.random() * 5);
-    ram = 42 + Math.floor(Math.random() * 2);
-    vram = 35 + Math.floor(Math.random() * 4);
-    
+    const cpu = 8 + Math.floor(Math.random() * 5);
+    const ram = 42 + Math.floor(Math.random() * 2);
     document.getElementById("spec-cpu-val").textContent = `${cpu}%`;
     document.getElementById("spec-ram-val").textContent = `${ram}%`;
     document.getElementById("spec-ram-sub").textContent = "2.52 GB / 6.00 GB";
@@ -742,306 +800,188 @@ function updateTelemetry() {
     document.getElementById("spec-vram-val").textContent = "3.48 GB";
   }
   
-  // High-fidelity mobile GPU load and temperature simulation
-  gpu = Math.max(0, Math.min(100, Math.round(5 + (cpu * 0.4) + Math.random() * 4)));
-  temp = Math.round(38.5 + (cpu * 0.15) + Math.random() * 1.5);
-  
-  // Push to rolling history arrays
-  cpuHistoryMobile.push(cpu); cpuHistoryMobile.shift();
-  ramHistoryMobile.push(ram); ramHistoryMobile.shift();
-  gpuHistoryMobile.push(gpu); gpuHistoryMobile.shift();
-  vramHistoryMobile.push(vram); vramHistoryMobile.shift();
-  tempHistoryMobile.push(temp); tempHistoryMobile.shift();
-  
-  // Update UI values in Telemetry page
-  const cpuPct = document.getElementById("telemetry-cpu-pct");
-  if (cpuPct) cpuPct.textContent = `${cpu}%`;
-  const ramPct = document.getElementById("telemetry-ram-pct");
-  if (ramPct) ramPct.textContent = `${ram}%`;
-  const vramPct = document.getElementById("telemetry-vram-pct");
-  if (vramPct) vramPct.textContent = `${vram}%`;
-  const gpuPct = document.getElementById("telemetry-gpu-pct");
-  if (gpuPct) gpuPct.textContent = `${gpu}%`;
-  const tempPct = document.getElementById("telemetry-temp-pct");
-  if (tempPct) tempPct.textContent = `${temp}°C`;
-
-  // Draw small sparklines inside chips
-  drawMobileSparkline("sparkline-cpu", cpuHistoryMobile, "#8b5cf6");
-  drawMobileSparkline("sparkline-ram", ramHistoryMobile, "#06b6d4");
-  drawMobileSparkline("sparkline-vram", vramHistoryMobile, "#f43f5e");
-  drawMobileSparkline("sparkline-gpu", gpuHistoryMobile, "#10b981");
-  drawMobileSparkline("sparkline-temp", tempHistoryMobile, "#f59e0b");
-  
-  // Update Detail Card if active
-  if (currentTab === "performance") {
-    const valEl = document.getElementById("telemetry-detail-val");
-    if (valEl) {
-      if (currentTelemetryResource === "cpu") valEl.textContent = `${cpu}%`;
-      else if (currentTelemetryResource === "ram") valEl.textContent = `${ram}%`;
-      else if (currentTelemetryResource === "vram") valEl.textContent = `${vram}%`;
-      else if (currentTelemetryResource === "gpu") valEl.textContent = `${gpu}%`;
-      else if (currentTelemetryResource === "temp") valEl.textContent = `${temp} °C`;
-    }
-    drawTelemetryDetailChart();
-  }
-  
   // Also poll LLM server state
   updateLlmStatus();
 }
 
-function selectTelemetryResource(resourceType) {
-  currentTelemetryResource = resourceType;
-  
-  document.querySelectorAll(".resource-chip").forEach(chip => {
-    chip.classList.remove("active");
-  });
-  const activeChip = document.getElementById(`res-chip-${resourceType}`);
-  if (activeChip) activeChip.classList.add("active");
-  
-  const titleEl = document.getElementById("telemetry-detail-title");
-  const spec1Label = document.getElementById("telemetry-spec1-label");
-  const spec1Val = document.getElementById("telemetry-spec1-val");
-  const spec2Label = document.getElementById("telemetry-spec2-label");
-  const spec2Val = document.getElementById("telemetry-spec2-val");
-  const spec3Label = document.getElementById("telemetry-spec3-label");
-  const spec3Val = document.getElementById("telemetry-spec3-val");
-  const spec4Label = document.getElementById("telemetry-spec4-label");
-  const spec4Val = document.getElementById("telemetry-spec4-val");
-  const valEl = document.getElementById("telemetry-detail-val");
-  
-  const specs = fetchPhysicalDeviceSpecs();
-  
-  if (resourceType === "cpu") {
-    titleEl.textContent = "CPU Utilization";
-    valEl.textContent = document.getElementById("telemetry-cpu-pct") ? document.getElementById("telemetry-cpu-pct").textContent : "--";
-    valEl.className = "chip-value text-purple";
-    
-    spec1Label.textContent = "Processor";
-    spec1Val.textContent = specs.processor;
-    spec2Label.textContent = "Cores";
-    spec2Val.textContent = `${specs.cores} Cores`;
-    spec3Label.textContent = "Device Model";
-    spec3Val.textContent = specs.model;
-    spec4Label.textContent = "Manufacturer";
-    spec4Val.textContent = specs.manufacturer;
-  } else if (resourceType === "ram") {
-    titleEl.textContent = "Memory Utilization";
-    valEl.textContent = document.getElementById("telemetry-ram-pct") ? document.getElementById("telemetry-ram-pct").textContent : "--";
-    valEl.className = "chip-value text-cyan";
-    
-    let memoryType = "LPDDR5X High-Speed";
-    const devSpecs = fetchPhysicalDeviceSpecs();
-    const modelUpper = (devSpecs.model || "").toUpperCase();
-    if (modelUpper.includes("CPH2613") || modelUpper.includes("CPH26") || modelUpper.includes("NORD")) {
-      memoryType = "LPDDR4X Dual-Channel";
-    } else if (modelUpper.includes("EMULATOR") || modelUpper.includes("ANDROID SDK") || modelUpper.includes("VIRTUAL")) {
-      memoryType = "DDR4 Virtual RAM";
-    }
-    
-    spec1Label.textContent = "Memory Type";
-    spec1Val.textContent = memoryType;
-    spec2Label.textContent = "Capacity";
-    spec2Val.textContent = document.getElementById("spec-ram-sub").textContent.split(" / ")[1] || "8.00 GB";
-    spec3Label.textContent = "Used";
-    spec3Val.textContent = document.getElementById("spec-ram-sub").textContent.split(" / ")[0] || "3.50 GB";
-    spec4Label.textContent = "Available";
-    spec4Val.textContent = document.getElementById("spec-vram-val").textContent || "4.50 GB";
-  } else if (resourceType === "vram") {
-    titleEl.textContent = "Virtual Memory Usage";
-    valEl.textContent = document.getElementById("telemetry-vram-pct") ? document.getElementById("telemetry-vram-pct").textContent : "--";
-    valEl.className = "chip-value text-rose";
-    
-    spec1Label.textContent = "Swap Type";
-    spec1Val.textContent = "Compressed ZRAM Swap";
-    spec2Label.textContent = "Total Allocated";
-    spec2Val.textContent = "2.00 GB";
-    spec3Label.textContent = "Active Pages";
-    spec3Val.textContent = "432 MB Active";
-    spec4Label.textContent = "Compression";
-    spec4Val.textContent = "2.4:1 LZO";
-  } else if (resourceType === "gpu") {
-    titleEl.textContent = "GPU Load";
-    valEl.textContent = document.getElementById("telemetry-gpu-pct") ? document.getElementById("telemetry-gpu-pct").textContent : "--";
-    valEl.className = "chip-value text-emerald";
-    
-    spec1Label.textContent = "GPU Model";
-    spec1Val.textContent = specs.gpu;
-    spec2Label.textContent = "Frequency";
-    spec2Val.textContent = "770 MHz";
-    spec3Label.textContent = "Backend";
-    spec3Val.textContent = "Vulkan 1.3 Offline";
-    spec4Label.textContent = "Shader Units";
-    spec4Val.textContent = "6 Compute Units";
-  } else if (resourceType === "temp") {
-    titleEl.textContent = "Thermal Management";
-    valEl.textContent = document.getElementById("telemetry-temp-pct") ? document.getElementById("telemetry-temp-pct").textContent : "--";
-    valEl.className = "chip-value text-gold";
-    
-    spec1Label.textContent = "Sensor";
-    spec1Val.textContent = "CPU Core Junction";
-    spec2Label.textContent = "Cooling State";
-    spec2Val.textContent = "Passive Equilibrium";
-    spec3Label.textContent = "Throttling";
-    spec3Val.textContent = "Nominal (None)";
-    spec4Label.textContent = "Battery Temp";
-    spec4Val.textContent = "33.2 °C";
-  }
-  
-  drawTelemetryDetailChart();
-}
-window.selectTelemetryResource = selectTelemetryResource;
+window.cpuHistory = new Array(60).fill(0);
+window.ramHistory = new Array(60).fill(0);
 
-function drawTelemetryDetailChart() {
-  const canvas = document.getElementById("telemetry-detail-chart");
+window.updateLiveGraph = function(cpu, ram) {
+  // Update texts
+  const cpuText = document.getElementById("live-cpu-text");
+  if (cpuText) cpuText.textContent = `${cpu}%`;
+  
+  const ramText = document.getElementById("live-ram-text");
+  if (ramText) ramText.textContent = `${ram}%`;
+  
+  // shift and push
+  window.cpuHistory.shift();
+  window.cpuHistory.push(cpu);
+  window.ramHistory.shift();
+  window.ramHistory.push(ram);
+  
+  // Draw the performance graph
+  window.drawPerformanceGraph();
+};
+
+window.drawPerformanceGraph = function() {
+  const canvas = document.getElementById("performance-graph");
   if (!canvas) return;
+  
   const ctx = canvas.getContext("2d");
   
-  const displayWidth = canvas.clientWidth || 300;
-  const displayHeight = canvas.clientHeight || 160;
-  if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-    canvas.width = displayWidth;
-    canvas.height = displayHeight;
-  }
+  // Handle high-DPI displays
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
   
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const width = rect.width;
+  const height = rect.height;
   
-  let history = cpuHistoryMobile;
-  let color = "#8b5cf6"; // CPU Purple
-  if (currentTelemetryResource === "ram") {
-    history = ramHistoryMobile;
-    color = "#06b6d4"; // Memory Cyan
-  } else if (currentTelemetryResource === "vram") {
-    history = vramHistoryMobile;
-    color = "#f43f5e"; // Swap Rose
-  } else if (currentTelemetryResource === "gpu") {
-    history = gpuHistoryMobile;
-    color = "#10b981"; // GPU Emerald
-  } else if (currentTelemetryResource === "temp") {
-    history = tempHistoryMobile;
-    color = "#f59e0b"; // Thermal Gold
-  }
+  // Clear the canvas
+  ctx.clearRect(0, 0, width, height);
   
-  if (history.length === 0) return;
-  
-  // Draw background grid lines (TaskManager-style: 10 columns, 4 rows)
+  // Draw faint grid system
   ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
   ctx.lineWidth = 1;
-  const cols = 10;
-  const rows = 4;
-  for (let i = 1; i < rows; i++) {
-    const y = (canvas.height / rows) * i;
+  
+  // Horizontal grid lines (4 lines)
+  const horizontalGridLines = 4;
+  for (let i = 1; i <= horizontalGridLines; i++) {
+    const y = (height / (horizontalGridLines + 1)) * i;
     ctx.beginPath();
     ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
+    ctx.lineTo(width, y);
     ctx.stroke();
   }
-  for (let i = 1; i < cols; i++) {
-    const x = (canvas.width / cols) * i;
+  
+  // Vertical grid lines (6 lines)
+  const verticalGridLines = 6;
+  for (let i = 1; i <= verticalGridLines; i++) {
+    const x = (width / (verticalGridLines + 1)) * i;
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
+    ctx.lineTo(x, height);
     ctx.stroke();
   }
   
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height);
-  const step = canvas.width / (history.length - 1);
-  for (let i = 0; i < history.length; i++) {
-    const x = i * step;
-    const y = canvas.height - (history[i] / 100) * (canvas.height - 10) - 5;
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(canvas.width, canvas.height);
-  ctx.closePath();
-  
-  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  const alphaColor = color === "#8b5cf6" ? "rgba(139, 92, 246, 0.15)" : 
-                     color === "#06b6d4" ? "rgba(6, 182, 212, 0.15)" : 
-                     color === "#f43f5e" ? "rgba(244, 63, 94, 0.15)" : 
-                     color === "#10b981" ? "rgba(16, 185, 129, 0.15)" : 
-                     "rgba(245, 158, 11, 0.15)";
-  grad.addColorStop(0, alphaColor);
-  grad.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = grad;
-  ctx.fill();
-  
-  ctx.beginPath();
-  for (let i = 0; i < history.length; i++) {
-    const x = i * step;
-    const y = canvas.height - (history[i] / 100) * (canvas.height - 10) - 5;
-    if (i === 0) {
-      ctx.moveTo(x, y);
-    } else {
+  // Helper to draw a metric line
+  function drawMetricLine(historyArray, color, shadowColor) {
+    if (!historyArray || historyArray.length === 0) return;
+    
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    
+    // Enable shadows for neon liquid glass effect
+    ctx.shadowColor = shadowColor;
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+    
+    const steps = historyArray.length - 1;
+    const xStep = width / steps;
+    
+    for (let i = 0; i < historyArray.length; i++) {
+      const x = i * xStep;
+      const val = Math.max(0, Math.min(100, historyArray[i]));
+      const y = height - (val / 100) * (height - 8) - 4;
+      
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    
+    // Clean up shadow settings
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    
+    // Draw subtle gradient fill underneath the line
+    ctx.beginPath();
+    const grad = ctx.createLinearGradient(0, 0, 0, height);
+    grad.addColorStop(0, color.replace("1)", "0.15)"));
+    grad.addColorStop(1, color.replace("1)", "0.0)"));
+    ctx.fillStyle = grad;
+    
+    ctx.moveTo(0, height);
+    for (let i = 0; i < historyArray.length; i++) {
+      const x = i * xStep;
+      const val = Math.max(0, Math.min(100, historyArray[i]));
+      const y = height - (val / 100) * (height - 8) - 4;
       ctx.lineTo(x, y);
     }
+    ctx.lineTo(width, height);
+    ctx.closePath();
+    ctx.fill();
   }
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
   
-  ctx.beginPath();
-  ctx.arc((history.length - 1) * step, canvas.height - (history[history.length - 1] / 100) * (canvas.height - 10) - 5, 4, 0, 2 * Math.PI);
-  ctx.fillStyle = color;
-  ctx.fill();
-}
+  // Draw RAM line: Cyan (#00BFFF)
+  drawMetricLine(window.ramHistory, "rgba(0, 191, 255, 1)", "rgba(0, 191, 255, 0.4)");
+  
+  // Draw CPU line: Emerald (#00E676)
+  drawMetricLine(window.cpuHistory, "rgba(0, 230, 118, 1)", "rgba(0, 230, 118, 0.4)");
+};
 
-function drawMobileSparkline(canvasId, history, color) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
+function initDeviceSpecs() {
+  const specs = fetchPhysicalDeviceSpecs();
   
-  const displayWidth = canvas.clientWidth || 300;
-  const displayHeight = canvas.clientHeight || 40;
-  if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-    canvas.width = displayWidth;
-    canvas.height = displayHeight;
-  }
+  const procEl = document.getElementById("telemetry-device-processor");
+  if (procEl) procEl.textContent = specs.processor;
   
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (history.length === 0) return;
+  const coresEl = document.getElementById("telemetry-device-cores");
+  if (coresEl) coresEl.textContent = `${specs.cores} Cores`;
   
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height);
-  const step = canvas.width / (history.length - 1);
-  for (let i = 0; i < history.length; i++) {
-    const x = i * step;
-    const y = canvas.height - (history[i] / 100) * (canvas.height - 4) - 2;
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(canvas.width, canvas.height);
-  ctx.closePath();
+  const modelEl = document.getElementById("telemetry-device-model");
+  if (modelEl) modelEl.textContent = specs.model;
   
-  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  const alphaColor = color === "#10b981" ? "rgba(16, 185, 129, 0.15)" : 
-                     color === "#f59e0b" ? "rgba(245, 158, 11, 0.15)" : 
-                     "rgba(244, 63, 94, 0.15)";
-  grad.addColorStop(0, alphaColor);
-  grad.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = grad;
-  ctx.fill();
+  const manufacturerEl = document.getElementById("telemetry-device-manufacturer");
+  if (manufacturerEl) manufacturerEl.textContent = specs.manufacturer;
   
-  ctx.beginPath();
-  for (let i = 0; i < history.length; i++) {
-    const x = i * step;
-    const y = canvas.height - (history[i] / 100) * (canvas.height - 4) - 2;
-    if (i === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-  }
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  const gpuEl = document.getElementById("telemetry-device-gpu");
+  if (gpuEl) gpuEl.textContent = specs.gpu;
 }
+window.initDeviceSpecs = initDeviceSpecs;
 
 function updateNetworkStatus() {
   const dot = document.getElementById("network-dot");
   const label = document.getElementById("network-label");
   if (!dot || !label) return;
 
-  dot.className = "badge-dot active-wifi";
-  label.textContent = "Local Sandbox";
+  let isWifi = false;
+  let isMobileData = false;
+  let isOnline = navigator.onLine;
+
+  if (window.AndroidBridge) {
+    if (typeof window.AndroidBridge.checkWifiStatus === "function") {
+      isWifi = window.AndroidBridge.checkWifiStatus();
+    }
+    if (typeof window.AndroidBridge.checkMobileData === "function") {
+      isMobileData = window.AndroidBridge.checkMobileData();
+    }
+    isOnline = isWifi || isMobileData;
+  }
+
+  if (isWifi) {
+    dot.className = "badge-dot active-wifi";
+    label.textContent = "WiFi";
+  } else if (isMobileData) {
+    dot.className = "badge-dot active-mobile";
+    label.textContent = "Mobile Data";
+  } else if (isOnline) {
+    dot.className = "badge-dot active-wifi";
+    label.textContent = "Local Sandbox";
+  } else {
+    dot.className = "badge-dot";
+    label.innerHTML = "Local Sandbox<br>(Offline)";
+  }
 }
 
 // ----------------- NATIVE DIALOGS & MODEL DOWNLOADS -----------------
@@ -1101,6 +1041,38 @@ async function apiRequest(route, method = "GET", body = null) {
     throw new Error(`PC Server offline: ${e.message}`);
   }
 }
+
+window.showErrorAlert = function(title, message, confirmText, onConfirm) {
+  const modal = document.getElementById("error-alert-modal");
+  const msgEl = document.getElementById("error-alert-message");
+  const titleEl = document.getElementById("error-alert-title");
+  if (modal && msgEl) {
+    msgEl.textContent = message;
+    if (titleEl) titleEl.textContent = title;
+    
+    // Check if confirm button exists, if not create it
+    let confirmBtn = document.getElementById("error-alert-confirm-btn");
+    if (!confirmBtn) {
+      confirmBtn = document.createElement("button");
+      confirmBtn.id = "error-alert-confirm-btn";
+      confirmBtn.className = "btn-neon btn-neon-emerald";
+      confirmBtn.style.cssText = "background: linear-gradient(135deg, var(--accent-emerald) 0%, #059669 100%); color:#fff; align-self:flex-end; padding:6px 16px; font-size:0.78rem; min-height:34px; border:none; border-radius:6px; font-weight:600; cursor:pointer; margin-right: 8px;";
+      // Insert before dismiss button
+      const dismissBtn = modal.querySelector("button[onclick='closeErrorPopup()']");
+      dismissBtn.parentNode.insertBefore(confirmBtn, dismissBtn);
+    }
+    
+    confirmBtn.textContent = confirmText || "Confirm";
+    confirmBtn.style.display = onConfirm ? "inline-block" : "none";
+    
+    confirmBtn.onclick = function() {
+      closeErrorPopup();
+      if (onConfirm) onConfirm();
+    };
+    
+    modal.style.display = "flex";
+  }
+};
 
 function showErrorPopup(message, title = "System Notification") {
   const modal = document.getElementById("error-alert-modal");
@@ -1607,60 +1579,7 @@ function onOcrFileSelected(input) {
   }
 }
 
-function toggleWebcam() {
-  const video = document.getElementById("ocr-webcam-feed");
-  const placeholder = document.getElementById("ocr-webcam-placeholder");
-  const toggleBtn = document.getElementById("ocr-cam-toggle-btn");
-  const captureBtn = document.getElementById("ocr-capture-btn");
-  
-  if (!video || !placeholder || !toggleBtn || !captureBtn) return;
-  
-  if (ocrWebcamStream) {
-    ocrWebcamStream.getTracks().forEach(track => track.stop());
-    ocrWebcamStream = null;
-    video.srcObject = null;
-    video.style.display = "none";
-    placeholder.style.display = "block";
-    toggleBtn.textContent = "Start Camera";
-    captureBtn.disabled = true;
-  } else {
-    placeholder.textContent = "Launching camera lens...";
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      .then(stream => {
-        ocrWebcamStream = stream;
-        video.srcObject = stream;
-        video.style.display = "block";
-        placeholder.style.display = "none";
-        toggleBtn.textContent = "Stop Camera";
-        captureBtn.disabled = false;
-      })
-      .catch(err => {
-        placeholder.textContent = "Camera error: " + err.message;
-        console.error(err);
-      });
-  }
-}
-
-function captureWebcamSnapshot() {
-  const video = document.getElementById("ocr-webcam-feed");
-  const canvas = document.getElementById("ocr-webcam-canvas");
-  const statusMsg = document.getElementById("ocr-status-msg");
-  
-  if (!video || !canvas || !ocrWebcamStream) return;
-  
-  const ctx = canvas.getContext("2d");
-  canvas.width = video.videoWidth || 640;
-  canvas.height = video.videoHeight || 480;
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  
-  ocrCapturedImageBase64 = canvas.toDataURL("image/png");
-  if (statusMsg) {
-    statusMsg.textContent = "Snapshot captured successfully!";
-    statusMsg.style.color = "var(--accent-emerald)";
-  }
-  const imgPathEl = document.getElementById("ocr-image-path");
-  if (imgPathEl) imgPathEl.value = "";
-}
+// Legacy Webcam photo capture functions removed per Recovery Plan.
 
 async function extractOcrText() {
   const imagePath = document.getElementById("ocr-image-path").value;
@@ -1772,9 +1691,7 @@ async function saveOcrTextToDb() {
     document.getElementById("ocr-image-path").value = "";
     ocrCapturedImageBase64 = null;
     
-    if (ocrWebcamStream) {
-      toggleWebcam(); // Turn off webcam
-    }
+    // Webcam stream cleanup code removed
     
     loadIngestedDocuments();
   } catch (err) {
@@ -2237,11 +2154,7 @@ function toggleOperationMode(isStandalone) {
 }
 
 function isStandaloneMode() {
-  const stored = localStorage.getItem("app_operation_mode");
-  if (stored === null) {
-    return !!window.AndroidBridge; // Default to Standalone mode if running inside Android WebView
-  }
-  return stored === "standalone";
+  return true; // Mobile app is always standalone and independent of desktop
 }
 
 function openModelManagerModal() {
@@ -2258,15 +2171,48 @@ function closeModelManagerModal() {
   if (modal) modal.style.display = "none";
 }
 
+const DOWNLOAD_MODELS = [
+  { id: "qwen_0.5b", name: "Qwen-2.5 0.5B Instruct", size: "350 MB", desc: "Fast & Ultra-Lightweight. Low battery usage." },
+  { id: "qwen_1.5b", name: "Qwen-2.5 1.5B Instruct", size: "950 MB", desc: "Recommended. Balanced intelligence and speed." },
+  { id: "llama_1b", name: "Llama-3 1B Instruct", size: "650 MB", desc: "Highly capable meta engine model." }
+];
+
+const DOWNLOAD_PLUGINS = [
+  { id: 'pdf-js', name: 'PDF.js (Vector PDFs)', size: '35 MB', desc: 'Required for rendering vector PDFs offline.' },
+  { id: 'ocr-voice', name: 'Voice & Speech Pack', size: '45 MB', desc: 'Offline language speech to text module.' },
+  { id: 'biometric-lock', name: 'Biometric Authenticator', size: '12 MB', desc: 'Security module for locking secure notes.' }
+];
+
+window.currentDownloadTab = 'models';
+window.switchDownloadTab = function(tabName) {
+  window.currentDownloadTab = tabName;
+  
+  document.querySelectorAll('#dl-tab-models, #dl-tab-plugins').forEach(el => {
+    el.classList.remove('active');
+  });
+  
+  const activeTab = document.getElementById('dl-tab-' + tabName);
+  if (activeTab) {
+    activeTab.classList.add('active');
+  }
+  
+  renderSettingsModelManager();
+};
+
+let isModelDownloading = false;
+let currentDownloadId = null;
+let downloadProgress = 0;
+
 function renderSettingsModelManager() {
   const container = document.getElementById("model-manager-list-container");
   if (!container) return;
   
-  const models = [
-    { id: "qwen_0.5b", name: "Qwen-2.5 0.5B Instruct", size: "350 MB", desc: "Fast & Ultra-Lightweight. Low battery usage." },
-    { id: "qwen_1.5b", name: "Qwen-2.5 1.5B Instruct", size: "950 MB", desc: "Recommended. Balanced intelligence and speed." },
-    { id: "llama_1b", name: "Llama-3 1B Instruct", size: "650 MB", desc: "Highly capable meta engine model." }
-  ];
+  let sourceArray = [];
+  if (window.currentDownloadTab === 'models') {
+    sourceArray = DOWNLOAD_MODELS;
+  } else if (window.currentDownloadTab === 'plugins') {
+    sourceArray = DOWNLOAD_PLUGINS;
+  }
   
   const downloadedModels = [];
   try {
@@ -2280,18 +2226,44 @@ function renderSettingsModelManager() {
   
   container.innerHTML = "";
   
-  models.forEach(model => {
+  if (sourceArray.length === 0) {
+    container.innerHTML = `<div style="padding:40px 20px; text-align:center; color:var(--text-muted); font-size:0.9rem;">No items available.</div>`;
+    return;
+  }
+  
+  sourceArray.forEach(model => {
     const card = document.createElement("div");
-    card.className = "glass-panel";
-    card.style.cssText = "display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; border: 1.5px solid var(--panel-border); background: var(--card-bg-inner); margin-bottom: 4px;";
+    card.className = "glass-panel clickable-card";
+    card.style.cssText = "display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 8px; border: 1.5px solid var(--panel-border); background: var(--card-bg-inner); margin-bottom: 4px; cursor: pointer; transition: all 0.2s;";
     
     const isDownloaded = downloadedModels.includes(model.id);
+    const isThisDownloading = isModelDownloading && currentDownloadId === model.id;
+    
+    card.onclick = (e) => {
+      if (isDownloaded) {
+        uninstallSettingsModel(model.id);
+      } else if (!isThisDownloading) {
+        downloadSettingsModel(model.id);
+      }
+    };
     
     let actionBtn = "";
     if (isDownloaded) {
-      actionBtn = `<button class="btn-secondary" style="min-height: 26px; padding: 2px 10px; font-size: 0.65rem; color:#ef4444; border-color:rgba(239,68,68,0.3); background:rgba(239,68,68,0.05);" onclick="uninstallSettingsModel('${model.id}', this)">Uninstall</button>`;
+      actionBtn = `<button class="btn-secondary" style="min-height: 26px; padding: 2px 10px; font-size: 0.65rem; color:#ef4444; border-color:rgba(239,68,68,0.3); background:rgba(239,68,68,0.05); pointer-events: none;">Uninstall</button>`;
+    } else if (isThisDownloading) {
+      actionBtn = `<button class="btn-neon btn-neon-emerald" style="min-height: 26px; padding: 2px 10px; font-size: 0.65rem; pointer-events: none;" disabled>Downloading...</button>`;
     } else {
-      actionBtn = `<button class="btn-neon btn-neon-emerald" style="min-height: 26px; padding: 2px 10px; font-size: 0.65rem;" onclick="downloadSettingsModel('${model.id}', this)">Download</button>`;
+      actionBtn = `<button class="btn-neon btn-neon-emerald" style="min-height: 26px; padding: 2px 10px; font-size: 0.65rem; pointer-events: none;">Download</button>`;
+    }
+    
+    let progressHtml = "";
+    if (isThisDownloading) {
+      progressHtml = `
+        <div class="progress-container" id="prog-cont-${model.id}" style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; margin-top: 8px;">
+          <div class="progress-bar" id="prog-bar-${model.id}" style="height: 100%; background: linear-gradient(90deg, var(--accent-emerald), var(--accent-gold)); width: ${downloadProgress}%; transition: width 0.2s;"></div>
+        </div>
+        <div id="status-text-${model.id}" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Downloading... ${downloadProgress}%</div>
+      `;
     }
     
     card.innerHTML = `
@@ -2305,6 +2277,7 @@ function renderSettingsModelManager() {
         </div>
       </div>
       <p style="font-size: 0.65rem; color: var(--text-muted); margin: 0; margin-top: 4px; line-height: 1.3;">${model.desc}</p>
+      ${progressHtml}
     `;
     container.appendChild(card);
   });
@@ -2317,14 +2290,12 @@ function renderSettingsModelManager() {
   if (storageText && window.AndroidBridge && window.AndroidBridge.getDeviceTelemetry) {
     try {
       const data = JSON.parse(window.AndroidBridge.getDeviceTelemetry());
-      
       const freeG = parseFloat(data.storage_free);
       const totalG = parseFloat(data.storage_total);
       
       let displayFree = data.storage_free;
       let displayTotal = data.storage_total;
       
-      // If SD Card is present, add it to the display details
       if (data.sd_present) {
         displayFree = `${data.storage_free} (+${data.sd_free} SD)`;
         displayTotal = `${data.storage_total} (+${data.sd_total} SD)`;
@@ -2347,8 +2318,55 @@ function renderSettingsModelManager() {
   }
 }
 
+function downloadSettingsModel(modelId, btn) {
+  if (isModelDownloading) {
+    showToastBanner("A download is already in progress. Please wait.", "error");
+    return;
+  }
+  
+  isModelDownloading = true;
+  currentDownloadId = modelId;
+  downloadProgress = 0;
+  
+  renderSettingsModelManager();
+  
+  const interval = setInterval(() => {
+    downloadProgress += Math.floor(Math.random() * 12) + 6;
+    if (downloadProgress >= 100) {
+      downloadProgress = 100;
+      clearInterval(interval);
+      
+      let downloaded = [];
+      try {
+        downloaded = JSON.parse(localStorage.getItem("downloaded_models")) || [];
+      } catch(e) {}
+      if (!downloaded.includes(modelId)) {
+        downloaded.push(modelId);
+      }
+      localStorage.setItem("downloaded_models", JSON.stringify(downloaded));
+      localStorage.setItem("active_local_model", modelId);
+      
+      isModelDownloading = false;
+      currentDownloadId = null;
+      downloadProgress = 0;
+      
+      addNotification(`Model downloaded and activated!`, "success");
+      renderSettingsModelManager();
+      
+      if (document.getElementById("onboarding-overlay").style.display !== "none") {
+        goToOnboardingModels();
+      }
+    } else {
+      const progBar = document.getElementById(`prog-bar-${modelId}`);
+      const statusTxt = document.getElementById(`status-text-${modelId}`);
+      if (progBar) progBar.style.width = `${downloadProgress}%`;
+      if (statusTxt) statusTxt.textContent = `Downloading... ${downloadProgress}%`;
+    }
+  }, 200);
+}
+
 function uninstallSettingsModel(modelId, btn) {
-  if (confirm("Are you sure you want to uninstall and remove this model's cache?")) {
+  showErrorAlert("Remove Model", "Are you sure you want to uninstall and remove this model's cache?", "Remove", () => {
     let downloaded = [];
     try {
       downloaded = JSON.parse(localStorage.getItem("downloaded_models")) || [];
@@ -2363,44 +2381,10 @@ function uninstallSettingsModel(modelId, btn) {
     addNotification("Model removed from local storage cache.", "info");
     renderSettingsModelManager();
     
-    // Sync onboarding models list if open
     if (document.getElementById("onboarding-overlay").style.display !== "none") {
       goToOnboardingModels();
     }
-  }
-}
-
-function downloadSettingsModel(modelId, btn) {
-  btn.disabled = true;
-  btn.textContent = "Downloading...";
-  
-  let percent = 0;
-  const interval = setInterval(() => {
-    percent += Math.floor(Math.random() * 12) + 6;
-    if (percent >= 100) {
-      percent = 100;
-      clearInterval(interval);
-      
-      let downloaded = [];
-      try {
-        downloaded = JSON.parse(localStorage.getItem("downloaded_models")) || [];
-      } catch(e) {}
-      if (!downloaded.includes(modelId)) {
-        downloaded.push(modelId);
-      }
-      localStorage.setItem("downloaded_models", JSON.stringify(downloaded));
-      localStorage.setItem("active_local_model", modelId);
-      
-      addNotification(`Model downloaded and activated!`, "success");
-      renderSettingsModelManager();
-      
-      if (document.getElementById("onboarding-overlay").style.display !== "none") {
-        goToOnboardingModels();
-      }
-    } else {
-      btn.textContent = `${percent}%`;
-    }
-  }, 100);
+  });
 }
 
 function showAppInfoPopupFromSettings() {
@@ -2973,120 +2957,7 @@ function downscaleBase64Image(base64, maxDim, callback) {
 }
 
 // Draw the crop screen with the interactive handles
-function drawCropScreen() {
-  const canvas = document.getElementById("crop-canvas");
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  
-  const rect = canvas.parentNode.getBoundingClientRect();
-  const dWidth = Math.floor(rect.width);
-  const dHeight = Math.floor(rect.height);
-  if (Math.abs(canvas.width - dWidth) > 2 || Math.abs(canvas.height - dHeight) > 2) {
-    canvas.width = dWidth;
-    canvas.height = dHeight;
-  }
-  
-  const currentSrc = scannerBatchPages[currentPreviewPageIndex];
-  if (!currentSrc) return;
-  
-  // Initialize cropHandles from normalized coordinates if not dragging
-  if (activeDragHandle === null || !cropHandles || cropHandles.length !== 4) {
-    const normPoints = scannerPageCrops[currentPreviewPageIndex];
-    if (normPoints && normPoints.length === 4) {
-      cropHandles = normPoints.map(pt => ({
-        x: pt.x * canvas.width,
-        y: pt.y * canvas.height
-      }));
-    } else {
-      cropHandles = [
-        { x: 12, y: 12 },
-        { x: canvas.width - 12, y: 12 },
-        { x: canvas.width - 12, y: canvas.height - 12 },
-        { x: 12, y: canvas.height - 12 }
-      ];
-      scannerPageCrops[currentPreviewPageIndex] = cropHandles.map(pt => ({
-        x: pt.x / canvas.width,
-        y: pt.y / canvas.height
-      }));
-    }
-  }
-  
-  const render = (img) => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const imgRatio = img.width / img.height;
-    const canvasRatio = canvas.width / canvas.height;
-    let drawWidth = canvas.width;
-    let drawHeight = canvas.height;
-    let offsetX = 0;
-    let offsetY = 0;
-    
-    if (imgRatio > canvasRatio) {
-      drawHeight = canvas.width / imgRatio;
-      offsetY = (canvas.height - drawHeight) / 2;
-    } else {
-      drawWidth = canvas.height * imgRatio;
-      offsetX = (canvas.width - drawWidth) / 2;
-    }
-    
-    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-    
-    // Dark surround mask outside the crop polygon (M365 style)
-    ctx.save();
-    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath();
-    ctx.moveTo(cropHandles[0].x, cropHandles[0].y);
-    ctx.lineTo(cropHandles[1].x, cropHandles[1].y);
-    ctx.lineTo(cropHandles[2].x, cropHandles[2].y);
-    ctx.lineTo(cropHandles[3].x, cropHandles[3].y);
-    ctx.closePath();
-    ctx.fillStyle = "rgba(0,0,0,1)";
-    ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
-    ctx.restore();
-    
-    // Crisp white polygon border (M365 style — no emerald, no fill)
-    ctx.beginPath();
-    ctx.moveTo(cropHandles[0].x, cropHandles[0].y);
-    ctx.lineTo(cropHandles[1].x, cropHandles[1].y);
-    ctx.lineTo(cropHandles[2].x, cropHandles[2].y);
-    ctx.lineTo(cropHandles[3].x, cropHandles[3].y);
-    ctx.closePath();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([]);
-    ctx.stroke();
-    
-    // White draggable corner handles: outer glow ring + solid white dot
-    cropHandles.forEach((handle, idx) => {
-      const isActive = idx === activeDragHandle;
-      // Outer translucent ring
-      ctx.beginPath();
-      ctx.arc(handle.x, handle.y, isActive ? 18 : 14, 0, 2 * Math.PI);
-      ctx.fillStyle = isActive ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)";
-      ctx.fill();
-      // Inner solid white circle
-      ctx.beginPath();
-      ctx.arc(handle.x, handle.y, isActive ? 8 : 6.5, 0, 2 * Math.PI);
-      ctx.fillStyle = "#ffffff";
-      ctx.fill();
-    });
-  };
 
-  
-  if (cachedCropImage && cachedCropImageSrc === currentSrc) {
-    render(cachedCropImage);
-  } else {
-    const img = new Image();
-    img.onload = function() {
-      cachedCropImage = img;
-      cachedCropImageSrc = currentSrc;
-      render(img);
-    };
-    img.src = currentSrc;
-  }
-}
 
 let currentAspectLock = localStorage.getItem('cropAspectLock') || 'free';
 
@@ -3287,211 +3158,156 @@ function _createEdgeWorkerBlobUrl() {
   } catch(e) { return null; }
 }
 
-function startEdgeDetectionLoop() {
-  if (_scannerEdgeLoopActive) return;
-  _scannerEdgeLoopActive = true;
-  _scannerStability = 0;
-  _scannerSmoothedEdges = null;
-  _scannerLastEdges = null;
 
-  const video = document.getElementById("scanner-camera-feed");
-  const canvas = document.getElementById("scanner-tracking-canvas");
+
+
+
+
+// Draw the crop screen with the interactive handles
+
+function drawCropScreen() {
+  const canvas = document.getElementById("crop-canvas");
   if (!canvas) return;
-
-  // Create Web Worker
-  const workerUrl = _createEdgeWorkerBlobUrl();
-  if (workerUrl) {
-    _scannerEdgeWorker = new Worker(workerUrl);
-    URL.revokeObjectURL(workerUrl);
-    _scannerEdgeWorker.onmessage = (e) => {
-      _scannerLastEdges = e.data;
-      _scannerEdgeDetectionBusy = false;
-    };
-    _scannerEdgeWorker.onerror = () => { _scannerEdgeDetectionBusy = false; };
+  const ctx = canvas.getContext("2d");
+  
+  const rect = canvas.parentNode.getBoundingClientRect();
+  const dWidth = Math.floor(rect.width);
+  const dHeight = Math.floor(rect.height);
+  if (Math.abs(canvas.width - dWidth) > 2 || Math.abs(canvas.height - dHeight) > 2) {
+    canvas.width = dWidth;
+    canvas.height = dHeight;
   }
-
-  const detCanvas = document.createElement("canvas");
-  const detCtx = detCanvas.getContext("2d", { willReadFrequently: true });
-  let lastDetectionTime = 0;
-
-  // Detection sub-loop (throttled, off-main-thread via Worker)
-  const detectionLoop = (ts) => {
-    if (!_scannerEdgeLoopActive) return;
-    _scannerDetectRafId = requestAnimationFrame(detectionLoop);
-    if (ts - lastDetectionTime < 200 || _scannerEdgeDetectionBusy) return;
-    if (!video || video.readyState < 2 || !video.srcObject || video.paused) return;
-    const vW = video.videoWidth, vH = video.videoHeight;
-    if (!vW || !vH) return;
-    const scale = Math.min(280 / vW, 280 / vH, 1);
-    const dW = Math.max(1, Math.round(vW * scale));
-    const dH = Math.max(1, Math.round(vH * scale));
-    detCanvas.width = dW; detCanvas.height = dH;
-    detCtx.drawImage(video, 0, 0, dW, dH);
-    _scannerEdgeDetectionBusy = true;
-    try {
-      const imgData = detCtx.getImageData(0, 0, dW, dH);
-      if (_scannerEdgeWorker) {
-        _scannerEdgeWorker.postMessage({ pixels: imgData.data, width: dW, height: dH }, [imgData.data.buffer]);
-      } else {
-        // Inline fallback if Worker creation failed
-        _scannerLastEdges = null;
-        _scannerEdgeDetectionBusy = false;
-      }
-    } catch(e) { _scannerEdgeDetectionBusy = false; }
-    lastDetectionTime = ts;
-  };
-  _scannerDetectRafId = requestAnimationFrame(detectionLoop);
-
-  // Render loop (60fps, main thread only — draws EMA-smoothed white bracket overlay)
-  const renderLoop = () => {
-    if (!_scannerEdgeLoopActive) return;
-    _scannerRafId = requestAnimationFrame(renderLoop);
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    if (canvas.width !== Math.floor(rect.width) || canvas.height !== Math.floor(rect.height)) {
-      canvas.width = Math.floor(rect.width);
-      canvas.height = Math.floor(rect.height);
+  
+  const currentSrc = scannerBatchPages[currentPreviewPageIndex];
+  if (!currentSrc) return;
+  
+  // Initialize cropHandles from normalized coordinates if not dragging
+  if (activeDragHandle === null || !cropHandles || cropHandles.length !== 4) {
+    const normPoints = scannerPageCrops[currentPreviewPageIndex];
+    if (normPoints && normPoints.length === 4) {
+      cropHandles = normPoints.map(pt => ({
+        x: pt.x * canvas.width,
+        y: pt.y * canvas.height
+      }));
+    } else {
+      cropHandles = [
+        { x: 12, y: 12 },
+        { x: canvas.width - 12, y: 12 },
+        { x: canvas.width - 12, y: canvas.height - 12 },
+        { x: 12, y: canvas.height - 12 }
+      ];
+      scannerPageCrops[currentPreviewPageIndex] = cropHandles.map(pt => ({
+        x: pt.x / canvas.width,
+        y: pt.y / canvas.height
+      }));
     }
-    const ctx = canvas.getContext("2d");
+  }
+  
+  const render = (img) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const fallback = [
-      { x: 0.12, y: 0.12 }, { x: 0.88, y: 0.12 },
-      { x: 0.88, y: 0.88 }, { x: 0.12, y: 0.88 }
-    ];
-    const target = _scannerLastEdges || fallback;
-
-    if (!_scannerSmoothedEdges) {
-      _scannerSmoothedEdges = target.map(pt => ({ ...pt }));
+    const imgRatio = img.width / img.height;
+    const canvasRatio = canvas.width / canvas.height;
+    let drawWidth = canvas.width;
+    let drawHeight = canvas.height;
+    let offsetX = 0;
+    let offsetY = 0;
+    
+    if (imgRatio > canvasRatio) {
+      drawHeight = canvas.width / imgRatio;
+      offsetY = (canvas.height - drawHeight) / 2;
     } else {
-      const ALPHA = 0.12; // Lower = smoother but slower to respond
-      for (let i = 0; i < 4; i++) {
-        _scannerSmoothedEdges[i].x += (target[i].x - _scannerSmoothedEdges[i].x) * ALPHA;
-        _scannerSmoothedEdges[i].y += (target[i].y - _scannerSmoothedEdges[i].y) * ALPHA;
-      }
+      drawWidth = canvas.height * imgRatio;
+      offsetX = (canvas.width - drawWidth) / 2;
     }
-
-    // Compute stability score
-    if (_scannerLastEdges) {
-      let diff = 0;
-      for (let i = 0; i < 4; i++) {
-        diff += Math.hypot(
-          _scannerLastEdges[i].x - _scannerSmoothedEdges[i].x,
-          _scannerLastEdges[i].y - _scannerSmoothedEdges[i].y
-        );
-      }
-      _scannerStability = diff < 0.025
-        ? Math.min(1.0, _scannerStability + 0.025)
-        : Math.max(0.0, _scannerStability - 0.12);
-    } else {
-      _scannerStability = Math.max(0.0, _scannerStability - 0.04);
-    }
-
-    const p = _scannerSmoothedEdges.map(pt => ({
-      x: pt.x * canvas.width,
-      y: pt.y * canvas.height
-    }));
-
-    // Dark vignette outside document
-    ctx.fillStyle = "rgba(0, 0, 0, 0.52)";
+    
+    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+    
+    // Dark surround mask outside the crop polygon (M365 style)
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.globalCompositeOperation = "destination-out";
     ctx.beginPath();
-    ctx.moveTo(p[0].x, p[0].y); ctx.lineTo(p[1].x, p[1].y);
-    ctx.lineTo(p[2].x, p[2].y); ctx.lineTo(p[3].x, p[3].y);
+    ctx.moveTo(cropHandles[0].x, cropHandles[0].y);
+    ctx.lineTo(cropHandles[1].x, cropHandles[1].y);
+    ctx.lineTo(cropHandles[2].x, cropHandles[2].y);
+    ctx.lineTo(cropHandles[3].x, cropHandles[3].y);
     ctx.closePath();
+    ctx.fillStyle = "rgba(0,0,0,1)";
     ctx.fill();
     ctx.globalCompositeOperation = "source-over";
-
-    // White edge line (M365 style)
+    ctx.restore();
+    
+    // Crisp white polygon border
     ctx.beginPath();
-    ctx.moveTo(p[0].x, p[0].y); ctx.lineTo(p[1].x, p[1].y);
-    ctx.lineTo(p[2].x, p[2].y); ctx.lineTo(p[3].x, p[3].y);
+    ctx.moveTo(cropHandles[0].x, cropHandles[0].y);
+    ctx.lineTo(cropHandles[1].x, cropHandles[1].y);
+    ctx.lineTo(cropHandles[2].x, cropHandles[2].y);
+    ctx.lineTo(cropHandles[3].x, cropHandles[3].y);
     ctx.closePath();
     ctx.strokeStyle = "rgba(255, 255, 255, 0.88)";
     ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
     ctx.stroke();
-
-    // White corner brackets (contract + thicken as stability grows)
-    _drawScannerBracket(ctx, p[0], p[1], p[3], _scannerStability);
-    _drawScannerBracket(ctx, p[1], p[2], p[0], _scannerStability);
-    _drawScannerBracket(ctx, p[2], p[3], p[1], _scannerStability);
-    _drawScannerBracket(ctx, p[3], p[0], p[2], _scannerStability);
+    
+    // Corner handles
+    cropHandles.forEach((handle, idx) => {
+      const isActive = idx === activeDragHandle;
+      ctx.beginPath();
+      ctx.arc(handle.x, handle.y, isActive ? 18 : 14, 0, 2 * Math.PI);
+      ctx.fillStyle = isActive ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(handle.x, handle.y, isActive ? 8 : 6.5, 0, 2 * Math.PI);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+    });
   };
-  _scannerRafId = requestAnimationFrame(renderLoop);
-}
-
-function _drawScannerBracket(ctx, corner, adj1, adj2, stability) {
-  const d1x = adj1.x - corner.x, d1y = adj1.y - corner.y;
-  const len1 = Math.hypot(d1x, d1y) || 1;
-  const u1x = d1x / len1, u1y = d1y / len1;
-  const d2x = adj2.x - corner.x, d2y = adj2.y - corner.y;
-  const len2 = Math.hypot(d2x, d2y) || 1;
-  const u2x = d2x / len2, u2y = d2y / len2;
-  const offset = 20 - (stability * 8); // contracts from 20px → 12px
-  const arm = 22;
-  const sx = corner.x + (u1x + u2x) * offset;
-  const sy = corner.y + (u1y + u2y) * offset;
-  ctx.beginPath();
-  ctx.moveTo(sx + u1x * arm, sy + u1y * arm);
-  ctx.lineTo(sx, sy);
-  ctx.lineTo(sx + u2x * arm, sy + u2y * arm);
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 3 + (stability * 2); // 3px → 5px as stable
-  ctx.lineCap = "square";
-  ctx.lineJoin = "miter";
-  ctx.stroke();
-}
-
-function stopEdgeDetectionLoop() {
-  _scannerEdgeLoopActive = false;
-  if (_scannerRafId) { cancelAnimationFrame(_scannerRafId); _scannerRafId = null; }
-  if (_scannerDetectRafId) { cancelAnimationFrame(_scannerDetectRafId); _scannerDetectRafId = null; }
-  if (_scannerEdgeWorker) { _scannerEdgeWorker.terminate(); _scannerEdgeWorker = null; }
-  _scannerEdgeDetectionBusy = false;
-  // Clear the canvas
-  const canvas = document.getElementById("scanner-tracking-canvas");
-  if (canvas) {
-    const ctx = canvas.getContext("2d");
-    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  if (cachedCropImage && cachedCropImageSrc === currentSrc) {
+    render(cachedCropImage);
+  } else {
+    const img = new Image();
+    img.onload = function() {
+      cachedCropImage = img;
+      cachedCropImageSrc = currentSrc;
+      render(img);
+    };
+    img.src = currentSrc;
   }
 }
-// ── End Live Edge Detection Loop ──────────────────────────────────────────────────
-
-function stopCameraStream() {
-  stopEdgeDetectionLoop();
-  if (scannerCameraStream) {
-    try {
-      scannerCameraStream.getTracks().forEach(track => track.stop());
-    } catch(e) {}
-    scannerCameraStream = null;
-  }
-  const video = document.getElementById("scanner-camera-feed");
-  if (video) {
-    video.srcObject = null;
-    video.style.display = "none";
-    video.style.opacity = "0";
-  }
-}
-
 
 function showScannerScreen(screenId) {
+  const viewPort = document.getElementById("aether-scanner-viewport");
+  if (viewPort) {
+    viewPort.style.display = "flex";
+    
+    // For Save and Creations screen, use transparent viewport background to show frosted glass over the dashboard
+    if (screenId === "save" || screenId === "creations") {
+      viewPort.style.background = "transparent";
+      // Allow light theme variables to propagate if active
+      if (!document.body.classList.contains("dark-theme")) {
+        viewPort.classList.add("light-theme");
+      } else {
+        viewPort.classList.remove("light-theme");
+      }
+    } else {
+      viewPort.style.background = "";
+      viewPort.classList.remove("light-theme"); // Enforce dark theme for camera/viewfinder
+    }
+  }
   document.querySelectorAll("#aether-scanner-viewport > .scanner-screen").forEach(scr => {
     scr.style.display = "none";
   });
   const target = document.getElementById(`scanner-${screenId}-screen`);
-  if (target) target.style.display = "flex";
-  
-  if (screenId === "capture") {
-    startCameraStream();
-  } else {
-    stopCameraStream();
+  if (target) {
+    target.style.display = "flex";
   }
 }
 
-
 function openAetherScanner() {
   scannerBatchPages = [];
+  window.scannerBatchPages = scannerBatchPages;
   scannerBatchPagesFullRes = [];
   scannerPageCrops = [];
   scannerPageFilters = [];
@@ -3515,101 +3331,7 @@ function openAetherScanner() {
   showScannerScreen("capture");
 }
 
-function startCameraStream() {
-  // Terminate previous stream first
-  if (scannerCameraStream) {
-    try {
-      scannerCameraStream.getTracks().forEach(track => track.stop());
-    } catch(e) {}
-    scannerCameraStream = null;
-  }
-  
-  const video = document.getElementById("scanner-camera-feed");
-  const docSheet = document.getElementById("simulated-document-target");
-  
-  if (docSheet) {
-    docSheet.style.transform = "scale(0.8) translateY(40px)";
-    docSheet.style.opacity = "0";
-    docSheet.style.display = "flex";
-  }
-  if (video) {
-    video.style.display = "none";
-  }
-  
-  const constraints = {
-    audio: false,
-    video: {
-      facingMode: scannerCameraFacingMode,
-      width: { ideal: 1280 },
-      height: { ideal: 720 }
-    }
-  };
-  
-  if (video && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices.getUserMedia(constraints)
-      .then(stream => {
-        scannerCameraStream = stream;
-        video.srcObject = stream;
-        // FIX: Keep video invisible until it is truly playing — prevents Android WebView
-        // from showing the default Play ▶ button chrome between srcObject assignment and first frame
-        video.style.opacity = "0";
-        video.style.transition = "opacity 0.35s ease";
-        video.style.display = "block";
-        if (docSheet) {
-          docSheet.style.display = "none";
-        }
-        // Reveal feed only after first frame renders — eliminates play-button flash
-        const revealVideo = () => {
-          video.style.opacity = "1";
-          // Start edge detection + live bounding box overlay
-          startEdgeDetectionLoop();
-        };
-        video.addEventListener("playing", revealVideo, { once: true });
-        // Fallback: if 'playing' never fires, reveal after data is loaded
-        video.addEventListener("loadeddata", () => {
-          setTimeout(() => {
-            if (parseFloat(video.style.opacity || "0") < 1) revealVideo();
-          }, 400);
-        }, { once: true });
-        // Apply default flashlight state if possible
-        setTimeout(applyFlashlightMode, 500);
-      })
-      .catch(err => {
-        console.warn("Could not access camera with constraints, trying fallback:", err);
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-          .then(stream => {
-            scannerCameraStream = stream;
-            video.srcObject = stream;
-            video.style.opacity = "0";
-            video.style.transition = "opacity 0.35s ease";
-            video.style.display = "block";
-            if (docSheet) docSheet.style.display = "none";
-            const revealFallback = () => { video.style.opacity = "1"; };
-            video.addEventListener("playing", revealFallback, { once: true });
-            video.addEventListener("loadeddata", () => {
-              setTimeout(() => { if (parseFloat(video.style.opacity || "0") < 1) revealFallback(); }, 400);
-            }, { once: true });
-          })
-          .catch(fallbackErr => {
-            console.error("Camera fail:", fallbackErr);
-            if (docSheet) {
-              docSheet.style.display = "flex";
-              setTimeout(() => {
-                docSheet.style.transform = "scale(1) translateY(0)";
-                docSheet.style.opacity = "0.95";
-              }, 100);
-            }
-          });
-      });
-  } else {
-    if (docSheet) {
-      setTimeout(() => {
-        docSheet.style.transform = "scale(1) translateY(0)";
-        docSheet.style.opacity = "0.95";
-      }, 100);
-    }
-  }
-}
+
 
 
 function switchScannerCamera() {
@@ -3672,7 +3394,18 @@ function applyFlashlightMode() {
 }
 
 function closeAetherScanner() {
-  document.getElementById("aether-scanner-viewport").style.display = "none";
+  const viewPort = document.getElementById("aether-scanner-viewport");
+  if (viewPort) {
+    viewPort.style.display = "none";
+    viewPort.classList.remove("light-theme");
+  }
+  document.querySelectorAll("#aether-scanner-viewport > .scanner-screen").forEach(scr => {
+    scr.style.display = "none";
+  });
+  const savePreviewImg = document.getElementById("save-preview-img");
+  if (savePreviewImg) {
+    savePreviewImg.src = "";
+  }
   if (scannerCameraStream) {
     try {
       scannerCameraStream.getTracks().forEach(track => track.stop());
@@ -3687,7 +3420,9 @@ function closeAetherScanner() {
   // Restore status bar theme when leaving scanner
   const savedTheme = localStorage.getItem("theme") || "light";
   if (window.AndroidBridge && typeof AndroidBridge.setStatusBarTheme === "function") {
-    AndroidBridge.setStatusBarTheme(savedTheme);
+    try {
+      AndroidBridge.setStatusBarTheme(savedTheme);
+    } catch(e) {}
   }
 }
 
@@ -4007,14 +3742,58 @@ function rotatePreviewPage() {
   img.src = base64;
 }
 
-function retakePreviewPage() {
-  scannerBatchPages.splice(currentPreviewPageIndex, 1);
-  scannerBatchPagesFullRes.splice(currentPreviewPageIndex, 1);
-  scannerPageCrops.splice(currentPreviewPageIndex, 1);
-  scannerPageFilters.splice(currentPreviewPageIndex, 1);
-  showScannerScreen("capture");
-  const pageCount = scannerBatchPages.length;
+window.removeScanPage = function(index) {
+  if (index === undefined) index = currentPreviewPageIndex;
+  
+  if (window.scannerBatchPages && Array.isArray(window.scannerBatchPages)) {
+    try { window.scannerBatchPages.splice(index, 1); } catch(e){}
+  }
+  if (scannerBatchPages && Array.isArray(scannerBatchPages)) {
+    try { scannerBatchPages.splice(index, 1); } catch(e){}
+  }
+  if (scannerBatchPagesFullRes && Array.isArray(scannerBatchPagesFullRes)) {
+    try { scannerBatchPagesFullRes.splice(index, 1); } catch(e){}
+  }
+  if (scannerPageCrops && Array.isArray(scannerPageCrops)) {
+    try { scannerPageCrops.splice(index, 1); } catch(e){}
+  }
+  if (scannerPageFilters && Array.isArray(scannerPageFilters)) {
+    try { scannerPageFilters.splice(index, 1); } catch(e){}
+  }
+  
+  const pagesLen = (scannerBatchPages && scannerBatchPages.length) || 0;
+  
+  if (pagesLen === 0) {
+    closeAetherScanner();
+    return;
+  }
+  
+  if (currentPreviewPageIndex >= pagesLen) {
+    currentPreviewPageIndex = pagesLen - 1;
+  }
+  
+  const indicator = document.getElementById("preview-page-indicator");
+  if (indicator) {
+    indicator.textContent = `Page ${currentPreviewPageIndex + 1} of ${pagesLen}`;
+  }
+  
+  const savePreviewImg = document.getElementById("save-preview-img");
+  if (savePreviewImg) {
+    savePreviewImg.src = currentSaveFormat === "PDF" ? scannerBatchPages[0] : scannerBatchPages[currentPreviewPageIndex];
+  }
+  const countLabel = document.getElementById("save-file-count-label");
+  if (countLabel) {
+    countLabel.textContent = `${pagesLen} Page${pagesLen > 1 ? "s" : ""}`;
+  }
+  
+  try { drawCropScreen(); } catch(e){}
+  renderPreviewThumbnails();
   updateScannerBadge();
+  updateEstimatedFileSize();
+};
+
+function retakePreviewPage() {
+  window.removeScanPage(currentPreviewPageIndex);
 }
 
 function resetPreviewCrop() {
@@ -4038,109 +3817,51 @@ function renderPreviewThumbnails() {
     const thumb = document.createElement("div");
     thumb.className = "preview-thumbnail-item";
     thumb.setAttribute("data-index", idx);
-    thumb.draggable = true;
-    thumb.style.cssText = `flex: 0 0 60px; height: 80px; border-radius: 8px; border: 2px solid ${idx === currentPreviewPageIndex ? "var(--accent-emerald)" : "transparent"}; overflow: hidden; position: relative; cursor: grab; background: #000; flex-shrink: 0; user-select: none; transition: transform 0.15s ease;`;
+    thumb.draggable = false;
+    thumb.style.cssText = `flex: 0 0 60px; height: 80px; border-radius: 8px; border: 2px solid ${idx === currentPreviewPageIndex ? "var(--accent-emerald)" : "rgba(255, 255, 255, 0.15)"}; overflow: hidden; position: relative; cursor: grab; background: #000; flex-shrink: 0; user-select: none;`;
     thumb.innerHTML = `
       <img src="${p}" style="width:100%; height:100%; object-fit:cover; pointer-events:none;">
       <span style="position:absolute; bottom:2px; right:4px; font-size:0.6rem; color:#fff; background:rgba(0,0,0,0.6); padding:0 4px; border-radius:4px; pointer-events:none;">${idx + 1}</span>
+      <button onclick="event.stopPropagation(); window.removeScanPage(${idx})" style="position:absolute; top:2px; right:2px; background:#ef4444; color:white; border:none; border-radius:50%; width:16px; height:16px; font-size:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:bold; padding:0;">&times;</button>
     `;
     
     // Tap to select page
     thumb.onclick = (e) => {
       currentPreviewPageIndex = idx;
-      document.getElementById("preview-page-indicator").textContent = `Page ${idx + 1} of ${scannerBatchPages.length}`;
-      drawCropScreen();
-      renderPreviewThumbnails();
-    };
-    
-    // HTML5 Desktop drag-and-drop
-    thumb.ondragstart = (e) => {
-      e.dataTransfer.setData("text/plain", idx);
-    };
-    thumb.ondragover = (e) => {
-      e.preventDefault();
-      thumb.style.transform = "scale(1.1)";
-    };
-    thumb.ondragleave = () => {
-      thumb.style.transform = "scale(1)";
-    };
-    thumb.ondrop = (e) => {
-      e.preventDefault();
-      thumb.style.transform = "scale(1)";
-      const fromIdx = parseInt(e.dataTransfer.getData("text/plain"), 10);
-      if (!isNaN(fromIdx) && fromIdx !== idx) {
-        const tempPage = scannerBatchPages[fromIdx];
-        scannerBatchPages.splice(fromIdx, 1);
-        scannerBatchPages.splice(idx, 0, tempPage);
-        
-        const tempFilter = scannerPageFilters[fromIdx];
-        scannerPageFilters.splice(fromIdx, 1);
-        scannerPageFilters.splice(idx, 0, tempFilter);
-        
-        const tempCrop = scannerPageCrops[fromIdx];
-        scannerPageCrops.splice(fromIdx, 1);
-        scannerPageCrops.splice(idx, 0, tempCrop);
-        
-        currentPreviewPageIndex = idx;
-        document.getElementById("preview-page-indicator").textContent = `Page ${idx + 1} of ${scannerBatchPages.length}`;
-        drawCropScreen();
-        renderPreviewThumbnails();
+      const savePreviewImg = document.getElementById("save-preview-img");
+      if (savePreviewImg) {
+        savePreviewImg.src = currentSaveFormat === "PDF" ? scannerBatchPages[0] : scannerBatchPages[idx];
       }
-    };
-    
-    // Mobile Touch Drag-and-Drop
-    let startX = 0, startY = 0;
-    thumb.ontouchstart = (e) => {
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
-      thumb.style.zIndex = "10";
-      thumb.style.transition = "none";
-    };
-    
-    thumb.ontouchmove = (e) => {
-      const touch = e.touches[0];
-      const deltaX = touch.clientX - startX;
-      const deltaY = touch.clientY - startY;
-      thumb.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.08)`;
-    };
-    
-    thumb.ontouchend = (e) => {
-      thumb.style.zIndex = "";
-      thumb.style.transform = "";
-      thumb.style.transition = "transform 0.15s ease";
       
-      const touch = e.changedTouches[0];
-      const elementUnder = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (elementUnder) {
-        const targetThumb = elementUnder.closest(".preview-thumbnail-item");
-        if (targetThumb && targetThumb !== thumb) {
-          const fromIdx = idx;
-          const toIdx = parseInt(targetThumb.getAttribute("data-index"), 10);
-          
-          if (!isNaN(toIdx) && fromIdx !== toIdx) {
-            const tempPage = scannerBatchPages[fromIdx];
-            scannerBatchPages.splice(fromIdx, 1);
-            scannerBatchPages.splice(toIdx, 0, tempPage);
-            
-            const tempFilter = scannerPageFilters[fromIdx];
-            scannerPageFilters.splice(fromIdx, 1);
-            scannerPageFilters.splice(toIdx, 0, tempFilter);
-            
-            const tempCrop = scannerPageCrops[fromIdx];
-            scannerPageCrops.splice(fromIdx, 1);
-            scannerPageCrops.splice(toIdx, 0, tempCrop);
-            
-            currentPreviewPageIndex = toIdx;
-            document.getElementById("preview-page-indicator").textContent = `Page ${toIdx + 1} of ${scannerBatchPages.length}`;
-            drawCropScreen();
-            renderPreviewThumbnails();
-          }
-        }
+      const indicator = document.getElementById("preview-page-indicator");
+      if (indicator) {
+        indicator.textContent = `Page ${idx + 1} of ${scannerBatchPages.length}`;
       }
+      try { drawCropScreen(); } catch(e){}
+      renderPreviewThumbnails();
     };
     
     tray.appendChild(thumb);
   });
+  
+  // Append '+' add page card
+  const addCard = document.createElement("div");
+  addCard.className = "preview-thumbnail-item add-card";
+  addCard.style.cssText = `flex: 0 0 60px; height: 80px; border-radius: 8px; border: 2px dashed var(--accent-emerald); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; background: transparent; transition: background 0.2s, transform 0.15s;`;
+  addCard.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-emerald)" stroke-width="3" style="width: 24px; height: 24px;">
+      <line x1="12" y1="5" x2="12" y2="19"></line>
+      <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>
+  `;
+  addCard.onclick = () => {
+    if (window.AndroidBridge && window.AndroidBridge.launchNativeScanner) {
+      window.AndroidBridge.launchNativeScanner();
+    } else {
+      alert("Native Scanner not available");
+    }
+  };
+  tray.appendChild(addCard);
 }
 
 function goToReviewScreen() {
@@ -4218,15 +3939,19 @@ function moveReviewPage(dir) {
 }
 
 function deleteReviewPage() {
+  if (window.scannerBatchPages && window.scannerBatchPages !== scannerBatchPages) {
+    window.scannerBatchPages.splice(currentReviewPageIndex, 1);
+  }
   scannerBatchPages.splice(currentReviewPageIndex, 1);
   scannerBatchPagesFullRes.splice(currentReviewPageIndex, 1);
   scannerPageCrops.splice(currentReviewPageIndex, 1);
   scannerPageFilters.splice(currentReviewPageIndex, 1);
   
-  if (scannerBatchPages.length === 0) {
-    showScannerScreen("capture");
-    const pageCount = scannerBatchPages.length;
-    updateScannerBadge();
+  if (scannerBatchPages.length === 0 || (window.scannerBatchPages && window.scannerBatchPages.length === 0)) {
+    const saveScreen = document.getElementById("scanner-save-screen");
+    if (saveScreen) saveScreen.style.display = "none";
+    const dashboard = document.getElementById("tab-dashboard");
+    if (dashboard) dashboard.style.display = "flex";
     return;
   }
   
@@ -4247,25 +3972,218 @@ function goToSaveScreen() {
   document.getElementById("save-filename-input").value = `Scan_${dateStr}_${timeStr}`;
   
   // Show preview of first page
-  document.getElementById("save-preview-img").src = scannerBatchPages[0];
+  if (scannerBatchPages && scannerBatchPages.length > 0) {
+    document.getElementById("save-preview-img").src = scannerBatchPages[0];
+  }
   document.getElementById("save-file-count-label").textContent = `${scannerBatchPages.length} Page${scannerBatchPages.length > 1 ? "s" : ""}`;
   
   // Select format and size defaults
   selectSaveFormat("PDF");
   selectSaveSize("original");
+  
+  renderPreviewThumbnails();
 }
 
 function selectSaveFormat(fmt) {
   currentSaveFormat = fmt;
   document.getElementById("save-format-pdf").classList.toggle("active", fmt === "PDF");
   document.getElementById("save-format-photo").classList.toggle("active", fmt === "PHOTO");
+
+  // Keep File Size container visible for both formats so the user can choose sizes
+  const sizeContainer = document.getElementById("save-filesize-container");
+  if (sizeContainer) {
+    sizeContainer.style.display = "flex";
+  }
+
+  // Update estimated file size label
+  updateEstimatedFileSize();
+
+  // Update destinations list dynamically based on format
+  renderSaveDestinations();
+
+  // Update Save screen preview image based on format
+  updateSavePreview();
 }
 
 function selectSaveSize(sz) {
   currentSaveSize = sz;
+  const highChip = document.getElementById("save-size-high");
+  if (highChip) {
+    highChip.classList.toggle("active", sz === "high");
+  }
   document.getElementById("save-size-orig").classList.toggle("active", sz === "original");
   document.getElementById("save-size-med").classList.toggle("active", sz === "medium");
   document.getElementById("save-size-small").classList.toggle("active", sz === "small");
+
+  // Update estimated file size label
+  updateEstimatedFileSize();
+}
+
+async function getProcessedPagesForSize(sizeOption) {
+  if (!scannerBatchPages || scannerBatchPages.length === 0) return [];
+  const promises = [];
+  for (let i = 0; i < scannerBatchPages.length; i++) {
+    promises.push(new Promise((resolve) => {
+      processScannerPage(i, sizeOption, (resBase64) => {
+        resolve(resBase64);
+      });
+    }));
+  }
+  return Promise.all(promises);
+}
+
+async function calculateExactFileSize(format, sizeOption) {
+  let qualityRatio = 0.82;
+  if (sizeOption === "high") {
+    qualityRatio = 0.96;
+  } else if (sizeOption === "original") {
+    qualityRatio = 0.82;
+  } else if (sizeOption === "medium") {
+    qualityRatio = 0.72;
+  } else if (sizeOption === "small") {
+    qualityRatio = 0.55;
+  }
+
+  const processedPages = await getProcessedPagesForSize(sizeOption);
+  if (processedPages.length === 0) return 0;
+
+  if (format === 'PHOTO') {
+    const promises = processedPages.map(base64 => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(blob.size);
+            } else {
+              const pure = base64.includes(",") ? base64.split(",")[1] : base64;
+              resolve(Math.round(pure.length * 0.75));
+            }
+          }, 'image/jpeg', qualityRatio);
+        };
+        img.onerror = () => {
+          const pure = base64.includes(",") ? base64.split(",")[1] : base64;
+          resolve(Math.round(pure.length * 0.75));
+        };
+        img.src = base64;
+      });
+    });
+    const sizes = await Promise.all(promises);
+    return sizes.reduce((sum, size) => sum + size, 0);
+  } else if (format === 'PDF') {
+    if (window.AndroidBridge && typeof window.AndroidBridge.getCompiledPdfSize === "function") {
+      const size = window.AndroidBridge.getCompiledPdfSize(JSON.stringify(processedPages));
+      return size;
+    } else {
+      let totalBytes = 0;
+      processedPages.forEach(base64 => {
+        const pure = base64.includes(",") ? base64.split(",")[1] : base64;
+        totalBytes += pure.length * 0.75;
+      });
+      return totalBytes + processedPages.length * 2048;
+    }
+  }
+  return 0;
+}
+
+let currentCalculationId = 0;
+
+function updateEstimatedFileSize() {
+  const sizeLabel = document.getElementById("estimated-file-size-label");
+  if (!sizeLabel) return;
+
+  if (!scannerBatchPages || scannerBatchPages.length === 0) {
+    sizeLabel.textContent = "(Exact Size: 0 KB)";
+    return;
+  }
+
+  sizeLabel.textContent = "(Calculating...)";
+  
+  const calcId = ++currentCalculationId;
+  const format = currentSaveFormat;
+  const sizeOption = currentSaveSize;
+  
+  calculateExactFileSize(format, sizeOption).then(totalBytes => {
+    if (calcId !== currentCalculationId) return;
+    
+    let sizeStr = "";
+    if (totalBytes >= 1024 * 1024) {
+      sizeStr = (totalBytes / (1024 * 1024)).toFixed(2) + " MB";
+    } else {
+      sizeStr = (totalBytes / 1024).toFixed(1) + " KB";
+    }
+    sizeLabel.textContent = `(Exact Size: ${sizeStr})`;
+  }).catch(err => {
+    console.error("Exact size calculation failed:", err);
+    if (calcId === currentCalculationId) {
+      sizeLabel.textContent = "(Calculation Error)";
+    }
+  });
+}
+
+function renderSaveDestinations() {
+  const container = document.getElementById("save-destination-list");
+  if (!container) return;
+
+  const isPdf = currentSaveFormat === "PDF";
+  const actionSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:13px; height:13px; color:var(--text-muted); opacity:0.6;"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>`;
+
+  const destinations = [
+    {
+      action: "share",
+      label: isPdf ? "Share Document" : "Share Images",
+      iconColor: "var(--accent-cyan)",
+      svg: `<svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px; height:16px; color:var(--accent-cyan);"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></svg>`
+    },
+    {
+      action: "whatsapp",
+      label: isPdf ? "Share in WhatsApp" : "Share images in WhatsApp",
+      iconColor: "var(--accent-emerald)",
+      svg: `<svg viewBox="0 0 24 24" style="width:16px; height:16px;" fill="#25D366"><path d="M12.012 2c-5.506 0-9.97 4.46-9.97 9.963 0 1.954.563 3.775 1.534 5.323L2 22l4.896-1.283A9.92 9.92 0 0 0 12.012 22c5.506 0 9.97-4.46 9.97-9.963 0-5.503-4.464-9.963-9.97-9.963zm5.83 14.167c-.243.684-1.42 1.326-1.95 1.4-1.393.197-2.906-.395-4.887-1.22-3.136-1.306-5.115-4.526-5.272-4.737-.157-.212-1.265-1.696-1.265-3.238 0-1.542.802-2.3 1.092-2.6.29-.3.636-.375.849-.375.213 0 .425.006.611.014.195.008.456-.073.714.593.264.685.903 2.203.98 2.358.079.155.132.336.027.543-.105.207-.158.337-.317.518-.158.181-.331.404-.47.544-.154.154-.316.321-.136.63.18.31.802 1.323 1.72 2.14.263.233.493.44.708.537.247.11.472.062.648-.02.21-.097.872-.998 1.107-1.343.236-.345.47-.287.794-.167.324.12 2.053.966 2.406 1.142.353.176.589.264.676.41.086.147.086.848-.157 1.533z"/></svg>`
+    },
+    {
+      action: "onedrive",
+      label: "Save to OneDrive",
+      iconColor: "var(--accent-purple)",
+      svg: `<svg viewBox="0 0 24 24" style="width:16px; height:16px;" fill="#0078D4"><path d="M12 20a6 6 0 0 0 4.8-9.6C16.3 9.4 15.2 9 14 9c-.3 0-.5 0-.8.1C12.1 6.5 9.3 5 6.5 6 4 7 3.5 10 3.5 10c-1.5 0-3 1.5-3 3s1.5 3 3 3H12" /><path d="M17 10h.5A4.5 4.5 0 0 1 22 14.5c0 2.5-2 4.5-4.5 4.5H12a6 6 0 0 1-4.8-2.4" fill="#0078D4" opacity="0.8" /></svg>`
+    },
+    {
+      action: "gdrive",
+      label: "Save to Google Drive",
+      iconColor: "var(--accent-gold)",
+      svg: `<svg viewBox="0 0 24 24" style="width:16px; height:16px;"><path fill="#F4B400" d="M17.52 17.96h-11L9.04 13.6H20z" /><path fill="#4285F4" d="M20 13.6h-5.96L11.52 4h5.96z" /><path fill="#0F9D58" d="M11.52 4H6.48L2.5 10.96h5.02z" /></svg>`
+    }
+  ];
+
+  let html = "";
+  destinations.forEach(d => {
+    html += `
+      <div onclick="performSaveAction('${d.action}')" style="display:flex; justify-content:space-between; align-items:center; padding:12px; background:var(--card-bg-inner); border-radius:8px; border:1px solid var(--panel-border); cursor:pointer; transition:background 0.2s;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          ${d.svg}
+          <span style="font-size: 0.8rem; font-weight:600; color:var(--text-primary);">${d.label}</span>
+        </div>
+        ${actionSvg}
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function updateSavePreview() {
+  const savePreviewImg = document.getElementById("save-preview-img");
+  if (!savePreviewImg || !scannerBatchPages || scannerBatchPages.length === 0) return;
+  if (currentSaveFormat === "PDF") {
+    savePreviewImg.src = scannerBatchPages[0];
+  } else {
+    savePreviewImg.src = scannerBatchPages[currentPreviewPageIndex] || scannerBatchPages[0];
+  }
 }
 
 function saveCreationRecord(name, type, size, pagesCount) {
@@ -4367,6 +4285,18 @@ function processScannerPage(index, targetSizeOption, callback) {
   const img = new Image();
   img.onload = function() {
     let { w, h } = getOptimalTargetDimensions(corners, img.width, img.height);
+    let quality = 0.82;
+    if (targetSizeOption === "high") {
+      quality = 0.96;
+    } else if (targetSizeOption === "original") {
+      quality = 0.82;
+    } else if (targetSizeOption === "medium") {
+      quality = 0.72;
+    } else if (targetSizeOption === "small") {
+      quality = 0.55;
+    }
+    const qualityInt = Math.round(quality * 100);
+
     if (targetSizeOption === "medium") {
       w = Math.round(w * 0.7);
       h = Math.round(h * 0.7);
@@ -4396,7 +4326,8 @@ function processScannerPage(index, targetSizeOption, callback) {
             x1, y1,
             x2, y2,
             x3, y3,
-            w, h
+            w, h,
+            qualityInt
           ));
           if (!resObj.ok) throw new Error(resObj.error);
           
@@ -4437,7 +4368,7 @@ function processScannerPage(index, targetSizeOption, callback) {
                 }
               }
               ctxDst.putImageData(dstData, 0, 0);
-              return callback(canvasDst.toDataURL("image/jpeg", 0.92));
+              return callback(canvasDst.toDataURL("image/jpeg", quality));
             };
             filterImg.src = resObj.data;
             return;
@@ -4546,7 +4477,7 @@ function processScannerPage(index, targetSizeOption, callback) {
     }
     
     ctxDst.putImageData(dstData, 0, 0);
-    callback(canvasDst.toDataURL("image/jpeg", 0.92));
+    callback(canvasDst.toDataURL("image/jpeg", quality));
   };
   img.onerror = function() {
     callback(fullBase64);
@@ -4597,38 +4528,101 @@ function performSaveAction(actionType) {
       
       saveCreationRecord(finalName, currentSaveFormat, currentSaveSize.toUpperCase(), finalProcessedPages.length);
       
-      if (currentSaveFormat === "PDF") {
-        if (window.AndroidBridge && window.AndroidBridge.combineImagesToPdf) {
-          try {
-            const resObj = JSON.parse(window.AndroidBridge.combineImagesToPdf(JSON.stringify(finalProcessedPages), finalName));
-            if (!resObj.ok) throw new Error(resObj.error);
-            addNotification("Saved as PDF securely! Path: " + resObj.path, "success");
-            closeAetherScanner();
-          } catch (e) {
-            addNotification("PDF Compilation failed: " + e.message, "error");
+      const payload = JSON.stringify(finalProcessedPages);
+      
+      if (actionType === "share") {
+        if (window.AndroidBridge && window.AndroidBridge.shareDocument) {
+          window.AndroidBridge.shareDocument(finalName, payload);
+          addNotification("Sharing document...", "info");
+        } else {
+          addNotification("Native sharing not available.", "error");
+        }
+        if (procOverlay) procOverlay.style.display = "none";
+      } else if (actionType === "whatsapp") {
+        if (window.AndroidBridge && window.AndroidBridge.shareToWhatsApp) {
+          window.AndroidBridge.shareToWhatsApp(finalName, payload);
+          addNotification("Sharing to WhatsApp...", "info");
+        } else {
+          addNotification("Native WhatsApp sharing not available.", "error");
+        }
+        if (procOverlay) procOverlay.style.display = "none";
+      } else if (actionType === "onedrive") {
+        if (window.AndroidBridge && window.AndroidBridge.shareToPhoneLink) {
+          window.AndroidBridge.shareToPhoneLink(finalName, payload);
+          addNotification("Sharing to OneDrive...", "info");
+        } else {
+          addNotification("Native OneDrive sharing not available.", "error");
+        }
+        if (procOverlay) procOverlay.style.display = "none";
+      } else if (actionType === "gdrive") {
+        if (window.AndroidBridge && window.AndroidBridge.shareToGoogleDrive) {
+          window.AndroidBridge.shareToGoogleDrive(finalName, payload);
+          addNotification("Sharing to Google Drive...", "info");
+        } else {
+          addNotification("Native Google Drive sharing not available.", "error");
+        }
+        if (procOverlay) procOverlay.style.display = "none";
+      } else {
+        // Default: save locally to phone (downloads or gallery)
+        let didShowSystemNotification = false;
+        if (currentSaveFormat === "PDF") {
+          if (window.AndroidBridge && window.AndroidBridge.combineImagesToPdf) {
+            try {
+              const resObj = JSON.parse(window.AndroidBridge.combineImagesToPdf(JSON.stringify(finalProcessedPages), finalName));
+              if (!resObj.ok) throw new Error(resObj.error);
+              if (window.AndroidBridge.showSystemNotification) {
+                window.AndroidBridge.showSystemNotification("Export Complete", "Saved as " + finalName, resObj.path, "application/pdf");
+                didShowSystemNotification = true;
+              } else {
+                addNotification("Saved as PDF securely! Path: " + resObj.path, "success");
+              }
+            } catch (e) {
+              addNotification("PDF Compilation failed: " + e.message, "error");
+            }
+          } else {
+            downloadBase64File(finalProcessedPages[0], finalName);
           }
         } else {
-          downloadBase64File(finalProcessedPages[0], finalName);
+          if (window.AndroidBridge && window.AndroidBridge.saveImageToGallery) {
+            let lastPath = "";
+            let okCount = 0;
+            finalProcessedPages.forEach((p, index) => {
+              const pageName = `${customName}_page_${index + 1}.jpg`;
+              try {
+                const res = JSON.parse(window.AndroidBridge.saveImageToGallery(pageName, p));
+                if (res.ok) {
+                  okCount++;
+                  lastPath = res.path;
+                }
+              } catch(e){}
+            });
+            if (okCount > 0) {
+              if (window.AndroidBridge.showSystemNotification) {
+                const msg = okCount > 1 ? `Saved ${okCount} images to Gallery` : `Saved as ${finalName}`;
+                window.AndroidBridge.showSystemNotification("Export Complete", msg, lastPath, "image/jpeg");
+                didShowSystemNotification = true;
+              } else {
+                addNotification(`Saved ${okCount} images to Gallery!`, "success");
+              }
+            } else {
+              addNotification("Failed to save images to Gallery", "error");
+            }
+          } else {
+            finalProcessedPages.forEach((p, index) => {
+              const pageName = `${customName}_page_${index + 1}.jpg`;
+              downloadBase64File(p, pageName);
+            });
+          }
         }
-      } else {
-        if (window.AndroidBridge && window.AndroidBridge.saveImageToGallery) {
-          finalProcessedPages.forEach((p, index) => {
-            const pageName = `${customName}_page_${index + 1}.jpg`;
-            try { JSON.parse(window.AndroidBridge.saveImageToGallery(pageName, p)); } catch(e){}
-          });
-        } else {
-          finalProcessedPages.forEach((p, index) => {
-            const pageName = `${customName}_page_${index + 1}.jpg`;
-            downloadBase64File(p, pageName);
-          });
-        }
+        
+        setTimeout(() => {
+          if (procOverlay) procOverlay.style.display = "none";
+          closeAetherScanner();
+          if (!didShowSystemNotification) {
+            showToastBanner(`Your file was saved successfully! <a href="#" onclick="goToCreationsScreen(); return false;" style="color:var(--accent-cyan); text-decoration:underline; font-weight:700; margin-left:8px;">View</a>`, "success");
+          }
+        }, 500);
       }
-      
-      setTimeout(() => {
-        if (procOverlay) procOverlay.style.display = "none";
-        closeAetherScanner();
-        showToastBanner(`Your file was saved successfully! <a href="#" onclick="goToCreationsScreen(); return false;" style="color:var(--accent-cyan); text-decoration:underline; font-weight:700; margin-left:8px;">View</a>`, "success");
-      }, 500);
     }
   }
   
@@ -4726,17 +4720,81 @@ window.goBack = function() {
 };
 
 function updateScannerBadge() {
-  const pageCount = scannerBatchPages.length;
-  document.getElementById("scanner-page-count-badge").textContent = pageCount;
+  const pageCount = (scannerBatchPages && Array.isArray(scannerBatchPages)) ? scannerBatchPages.length : 0;
+  const countBadge = document.getElementById("scanner-page-count-badge");
+  if (countBadge) {
+    countBadge.textContent = pageCount;
+  }
+  const doneBtn = document.getElementById("scanner-done-btn");
+  const badgeThumb = document.getElementById("scanner-badge-thumbnail");
+  
   if (pageCount > 0) {
-    document.getElementById("scanner-done-btn").style.display = "block";
-    document.getElementById("scanner-badge-thumbnail").src = scannerBatchPages[pageCount - 1];
-    document.getElementById("scanner-badge-thumbnail").style.display = "block";
+    if (doneBtn) doneBtn.style.display = "block";
+    if (badgeThumb) {
+      badgeThumb.src = scannerBatchPages[pageCount - 1];
+      badgeThumb.style.display = "block";
+    }
   } else {
-    document.getElementById("scanner-done-btn").style.display = "none";
-    document.getElementById("scanner-badge-thumbnail").style.display = "none";
+    if (doneBtn) doneBtn.style.display = "none";
+    if (badgeThumb) badgeThumb.style.display = "none";
   }
 }
+
+window.reorderPagesAfterDrag = function(oldIndex, newIndex) {
+  if (!scannerBatchPages || !Array.isArray(scannerBatchPages)) return;
+  if (oldIndex < 0 || oldIndex >= scannerBatchPages.length) return;
+
+  // Clamp newIndex to valid batch pages range
+  if (newIndex >= scannerBatchPages.length) {
+    newIndex = scannerBatchPages.length - 1;
+  }
+  if (newIndex < 0) {
+    newIndex = 0;
+  }
+
+  if (oldIndex === newIndex) {
+    renderPreviewThumbnails();
+    return;
+  }
+
+  // Reorder scannerBatchPages
+  const movedPage = scannerBatchPages.splice(oldIndex, 1)[0];
+  scannerBatchPages.splice(newIndex, 0, movedPage);
+
+  // Reorder scannerBatchPagesFullRes
+  if (scannerBatchPagesFullRes && Array.isArray(scannerBatchPagesFullRes) && scannerBatchPagesFullRes.length > oldIndex) {
+    const movedFull = scannerBatchPagesFullRes.splice(oldIndex, 1)[0];
+    scannerBatchPagesFullRes.splice(newIndex, 0, movedFull);
+  }
+
+  // Reorder scannerPageCrops
+  if (scannerPageCrops && Array.isArray(scannerPageCrops) && scannerPageCrops.length > oldIndex) {
+    const movedCrop = scannerPageCrops.splice(oldIndex, 1)[0];
+    scannerPageCrops.splice(newIndex, 0, movedCrop);
+  }
+
+  // Reorder scannerPageFilters
+  if (scannerPageFilters && Array.isArray(scannerPageFilters) && scannerPageFilters.length > oldIndex) {
+    const movedFilter = scannerPageFilters.splice(oldIndex, 1)[0];
+    scannerPageFilters.splice(newIndex, 0, movedFilter);
+  }
+
+  currentPreviewPageIndex = newIndex;
+
+  // Re-render preview components
+  const indicator = document.getElementById("preview-page-indicator");
+  if (indicator) {
+    indicator.textContent = `Page ${currentPreviewPageIndex + 1} of ${scannerBatchPages.length}`;
+  }
+
+  const savePreviewImg = document.getElementById("save-preview-img");
+  if (savePreviewImg) {
+    savePreviewImg.src = currentSaveFormat === "PDF" ? scannerBatchPages[0] : scannerBatchPages[currentPreviewPageIndex];
+  }
+
+  updateEstimatedFileSize();
+  renderPreviewThumbnails();
+};
 
 window.shareCreationItem = shareCreationItem;
 window.deleteCreationItem = deleteCreationItem;
@@ -5768,11 +5826,11 @@ function copyScratchpadText() {
 }
 
 function clearScratchpadText() {
-  if (confirm("Are you sure you want to clear your scratchpad notes?")) {
+  showErrorAlert("Clear Scratchpad", "Are you sure you want to clear your scratchpad notes?", "Clear All", () => {
     const area = document.getElementById("widget-scratchpad-area");
     if (area) area.value = "";
     localStorage.removeItem("widget_notes");
-  }
+  });
 }
 
 const BOILERPLATES = {
@@ -6567,9 +6625,78 @@ window.updateShareSessionCountdown = updateShareSessionCountdown;
 window.adjustCropFromReview = adjustCropFromReview;
 window.goToCreationsScreen = goToCreationsScreen;
 
-// Failsafe Stubs
-window.setProductivityTool = window.setProductivityTool || function() {};
-window.showSettingsPopup = window.showSettingsPopup || function() {};
-window.closeSettingsPopup = window.closeSettingsPopup || function() {};
-window.toggleNotificationDropdown = window.toggleNotificationDropdown || function() {};
-window.clearAllNotifications = window.clearAllNotifications || function() {};
+// Hoisted UI modals and triggers
+window.showAppInfoPopup = showAppInfoPopup;
+window.closeAppInfoPopup = closeAppInfoPopup;
+window.showSettingsPopup = showSettingsPopup;
+window.closeSettingsPopup = closeSettingsPopup;
+window.openModelManagerModal = openModelManagerModal;
+window.closeModelManagerModal = closeModelManagerModal;
+window.toggleOperationMode = toggleOperationMode;
+window.isStandaloneMode = isStandaloneMode;
+window.openAetherScanner = openAetherScanner;
+window.closeAetherScanner = closeAetherScanner;
+window.showErrorPopup = showErrorPopup;
+window.closeErrorPopup = closeErrorPopup;
+window.resetLocalData = resetLocalData;
+window.setProductivityTool = setProductivityTool;
+window.clearAllNotifications = clearAllNotifications;
+
+// Add long-press tooltips to bottom nav using contextmenu
+document.addEventListener("DOMContentLoaded", () => {
+  const navBtns = document.querySelectorAll('.nav-item');
+  navBtns.forEach(btn => {
+    btn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const tooltipText = btn.getAttribute('data-tooltip') || btn.id.replace('nav-', '');
+      const prettyName = tooltipText.charAt(0).toUpperCase() + tooltipText.slice(1);
+      
+      let tooltip = document.getElementById('nav-tooltip-toast-el');
+      if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'nav-tooltip-toast-el';
+        tooltip.className = 'nav-tooltip-toast';
+        document.body.appendChild(tooltip);
+      }
+      
+      tooltip.textContent = prettyName;
+      
+      // Temporarily display to calculate exact width
+      tooltip.classList.add('show');
+      const tooltipWidth = tooltip.offsetWidth;
+      
+      // Position the tooltip centered above the button, clamped within screen edges
+      const rect = btn.getBoundingClientRect();
+      let leftVal = (rect.left + rect.width / 2) - tooltipWidth / 2;
+      leftVal = Math.max(8, Math.min(leftVal, window.innerWidth - tooltipWidth - 8));
+      
+      tooltip.style.left = leftVal + 'px';
+      tooltip.style.transform = 'none';
+      tooltip.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+      
+      setTimeout(() => {
+        tooltip.classList.remove('show');
+      }, 1500);
+    });
+  });
+});
+
+window.openUniversalReader = function(fileObj) {
+  if (!fileObj || !fileObj.name) return;
+  const name = fileObj.name.toLowerCase();
+  
+  if (name.endsWith('.docx') || name.endsWith('.xlsx') || name.endsWith('.pptx')) {
+    if (window.AndroidBridge && window.AndroidBridge.openFileWithIntent) {
+      window.AndroidBridge.openFileWithIntent(fileObj.data, fileObj.mime || "*/*", fileObj.name);
+      return;
+    } else {
+      if (typeof showToastBanner === "function") {
+        showToastBanner("Native Intent Bridge not available.", "error");
+      }
+    }
+  }
+  
+  // Phase 33 Universal Reader HTML modal logic will go here
+  const modal = document.getElementById("universal-reader-modal");
+  if (modal) modal.style.display = "flex";
+};
