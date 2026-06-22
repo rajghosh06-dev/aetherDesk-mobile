@@ -6,7 +6,7 @@
 This software is developed and hosted for personal use, showcasing software development and architectural achievements. 
 
 **IMPORTANT RESTRICTION:** 
-Any use, modification, duplication, reproduction, or distribution of this code—whether in part or in whole—is strictly prohibited without the express written permission of the author (Raj Ghosh). 
+Any use, modification, duplication, reproduction, or distribution of this code—whether in part or in whole—is strictly prohibited without the express written permission of the author [rajghosh06](https://github.com/rajghosh06-dev). 
 
 If you wish to study the code, you may do so locally via cloning for personal educational review, but you may not fork, re-host, publish, or use any portion of this application's source code, assets, themes, or intellectual property in your own projects or commercial software.
 
@@ -17,4 +17,4 @@ For permitted interactions or authorized collaborators, we prioritize a respectf
 Instances of unauthorized use of this codebase will be addressed at the author's discretion and may result in DMCA takedown notices or other legal remedies.
 
 ---
-*Built by Raj Ghosh and Antigravity.*
+*Built by [rajghosh06](https://github.com/rajghosh06-dev) and Antigravity.*

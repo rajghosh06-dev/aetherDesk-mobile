@@ -37,4 +37,4 @@ This document provides instructions on how to set up the AetherDesk Mobile devel
 When running the application for the first time, it will prompt for the `POST_NOTIFICATIONS` permission (on Android 13+) and media/camera permissions. These are essential for the document scanner and the native file export notifications to function correctly.
 
 ---
-*Built by Raj Ghosh and Antigravity.*
+*Built by [rajghosh06](https://github.com/rajghosh06-dev) and Antigravity.*

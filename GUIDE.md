@@ -26,4 +26,4 @@ You have native integration with Android's secure sharing ecosystem. Simply tap 
 - **Save to Downloads:** Generates the file natively and pushes a push-notification. Clicking the notification will open the saved file in your device's default File Manager!
 
 ---
-*Built by Raj Ghosh and Antigravity.*
+*Built by [rajghosh06](https://github.com/rajghosh06-dev) and Antigravity.*

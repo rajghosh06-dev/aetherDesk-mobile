@@ -11,4 +11,4 @@ If you have stumbled across this repository, you may review the code for persona
 Thank you for your understanding and respect for these boundaries.
 
 ---
-*Built by Raj Ghosh and Antigravity.*
+*Built by [rajghosh06](https://github.com/rajghosh06-dev) and Antigravity.*

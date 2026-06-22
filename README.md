@@ -1,6 +1,6 @@
 # AetherDesk Mobile
 
-![AetherDesk Logo](app/src/main/assets/www/favicon.png) <!-- Update the path if there's a specific logo -->
+![AetherDesk](app/src/main/assets/www/images/logo.png)
 
 AetherDesk Mobile is a powerful, hybrid Android application that delivers a premium document scanning and management experience. Designed to be completely offline and lightning-fast, it leverages Google's ML Kit Document Scanner to provide hardware-accelerated cropping, filtering, and edge detection.
 
@@ -21,9 +21,9 @@ To learn more about the project, refer to the following documentation files:
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## ⚖️ License & Copyright
-**Copyright © 2026 Raj Ghosh. All rights reserved.**
+**Copyright © 2026 Rishit Ghosh. All rights reserved.**
 
 This software is provided for personal use. **Any use, modification, reproduction, or distribution of this code requires explicit written permission from the author.** Please refer to the [Code of Conduct](CODE_OF_CONDUCT.md) for more details.
 
 ---
-*Built with ❤️ by Raj Ghosh and Antigravity.*
+*Built with ❤️ by [Rishit Ghosh](https://github.com/rajghosh06-dev) and Antigravity.*

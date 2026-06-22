@@ -1,31 +1,41 @@
-# Gradle files
+# === Built application files ===
+*.apk
+*.ap_
+*.aab
+
+# === Local configuration file (SDK path, etc) ===
+local.properties
+
+# === Gradle & Kotlin Caches ===
 .gradle/
+.kotlin/
 build/
 app/build/
 
-# Local configuration file (sdk path, etc)
-local.properties
-
-# Log/OS Files
-*.log
-.DS_Store
-
-# Android Studio captures folder
-captures/
-
-# IDE Files (IntelliJ / Android Studio / VS Code)
-*.iml
+# === Android Studio / IntelliJ ===
 .idea/
+*.iml
+*.iws
+
+# === AI Agents & Cache ===
+.agents/
+.aider*/
+.aider.tags.cache*
+
+# === IDEs & Editors ===
 .vscode/
+scratch/
 
-# External native build folder generated in Android Studio 2.2 and later
-.externalNativeBuild/
-.cxx/
+# === OS generated files ===
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# NDK
+# === NDK ===
 obj/
-
-# AI Tools
-.aider*
-
-# Ensure SVG and brand assets are implicitly retained (no ignore rule for them)
+.cxx/
+.externalNativeBuild/
