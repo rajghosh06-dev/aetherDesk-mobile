@@ -8,15 +8,26 @@ local.properties
 # Log Files
 *.log
 
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Log Files
+*.log
+
 # OS Files
 .DS_Store
 
 # Android Studio captures folder
 captures/
 
-# IntelliJ / Android Studio
+# IntelliJ / Android Studio / VS Code
 *.iml
 .idea/
+.vscode/
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild/
